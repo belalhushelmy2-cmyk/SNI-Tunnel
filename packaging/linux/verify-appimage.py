@@ -43,7 +43,9 @@ with tempfile.TemporaryDirectory(prefix='sni-v2-image-') as directory:
                                    env=env, stdout=log, stderr=log, start_new_session=True)
         try:
             time.sleep(4)
-            assert process.poll() is None, 'GUI exited before launch smoke check completed'
+            if process.poll() is not None:
+                log.flush()
+                raise AssertionError('GUI exited before launch smoke check completed:\n' + (base/'gui.log').read_text(errors='replace'))
         finally:
             try:
                 os.killpg(process.pid, signal.SIGTERM)

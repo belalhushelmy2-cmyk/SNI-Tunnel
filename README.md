@@ -27,6 +27,9 @@ See [AppImage details](packaging/linux/APPIMAGE.md), including its FUSE-free fal
 - Dark sidebar, first-click navigation, centered menu rows and a scrolling dashboard.
 - Actual traffic counters/history, session duration, active server/SNI and measured IP.
 - Server search/sorting, clipboard and VMess import/export, duplication and testing.
+- Imports always append profiles with fresh IDs and distinct names; existing profiles are kept.
+- Live server TCP latency every three seconds (two-second timeout), with honest unavailable readings. This measures TCP setup, not tunnel/HTTP health.
+- Native Linux StatusNotifierItem tray for Wayland/X11 desktops that provide a tray host. Close-to-tray, show, connect, disconnect, test and quit are supported; a missing host keeps the window accessible.
 - Scrollable editor, UUID visibility, validation and unsaved-change confirmation.
 - Searchable/redacted logs with copy/export and simple/advanced views.
 - Bounded recovery, explicit degraded/error states and cleanup of owned resources.

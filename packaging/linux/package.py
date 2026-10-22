@@ -45,7 +45,7 @@ Section: net
 Priority: optional
 Architecture: amd64
 Maintainer: SNI Tunnel local build <local@localhost>
-Depends: libc6 (>= {glibc_required}), libgcc-s1, libfontconfig1, libglib2.0-bin, libxkbcommon0, libx11-6, libxcb1, libwayland-client0, python3 (>= 3.8), iproute2, pkexec | policykit-1, ca-certificates, kmod
+Depends: libc6 (>= {glibc_required}), libgcc-s1, libfontconfig1, libglib2.0-bin, libxkbcommon0, libxkbcommon-x11-0, libxcb-xkb1, libxcursor1, libxrandr2, libxi6, libx11-6, libxcb1, libwayland-client0, python3 (>= 3.8), iproute2, pkexec | policykit-1, ca-certificates, kmod
 Installed-Size: {size}
 Description: VMess desktop tunnel with independent TLS SNI
  Native Slint desktop with Xray, BadVPN, Linux TUN and DNS recovery.

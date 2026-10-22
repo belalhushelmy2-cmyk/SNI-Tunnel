@@ -148,6 +148,13 @@ fn find_sni(cfg: &AppConfig, r: &str) -> Result<usize> {
 pub fn run(args: &[String], _logger: &Logger) -> Result<i32> {
     let cmd = args[0].as_str();
     let rest = &args[1..];
+    let read_only = matches!(cmd, "list" | "profiles" | "export")
+        || (cmd == "sni" && matches!(rest.first().map(String::as_str), None | Some("list")));
+    let _instance = if read_only {
+        None
+    } else {
+        Some(crate::util::lock_instance()?)
+    };
     match cmd {
         "list" | "profiles" => list(),
         "add" | "import" => import(rest),
@@ -341,33 +348,8 @@ fn import(rest: &[String]) -> Result<i32> {
         }
     }
 
-    let mut cfg = store::load();
-    let mut added = 0;
-    for mut p in imported {
-        if p.id.is_empty() {
-            p.id = uuid::Uuid::new_v4().to_string();
-        }
-        if p.name.is_empty() {
-            p.name = format!("{}:{}", p.address, p.port);
-        }
-        // Imports and explicit CLI flags already define the profile settings.
-        // Global defaults are for blank profiles created in the editor.
-        // De-duplicate on transport identity (not on the UUID).
-        if cfg
-            .servers
-            .iter()
-            .any(|s| s.address == p.address && s.port == p.port && s.network == p.network)
-        {
-            println!("skipped duplicate {}:{}", p.address, p.port);
-            continue;
-        }
-        println!("added [{}] {}", short(&p.id), p.name);
-        if cfg.selected_server.is_none() {
-            cfg.selected_server = Some(p.id.clone());
-        }
-        cfg.servers.push(p);
-        added += 1;
-    }
+    let mut cfg = store::load_checked()?;
+    let added = crate::profile_import::append(&mut cfg, imported);
     if added == 0 {
         bail!("nothing imported");
     }

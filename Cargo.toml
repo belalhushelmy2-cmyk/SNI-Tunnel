@@ -9,7 +9,7 @@ description = "SNI Tunnel - lightweight VMess + custom TLS SNI client (Windows d
 # The desktop GUI (Slint + tray). Disable it for a headless build, e.g. on a
 # Linux server or router where there is no display.
 default = ["gui"]
-gui = ["dep:slint", "dep:tray-icon", "dep:slint-build"]
+gui = ["dep:slint", "dep:tray-icon", "dep:slint-build", "dep:ksni"]
 
 [dependencies]
 slint = { version = "1.18", default-features = false, optional = true, features = [
@@ -79,6 +79,7 @@ tray-icon = { version = "0.26", optional = true }
 # Other platforms: rustls with the system trust store (pure Rust, no OpenSSL)
 # ---------------------------------------------------------------------------
 [target.'cfg(not(windows))'.dependencies]
+ksni = { version = "0.3.6", default-features = false, features = ["blocking", "async-io"], optional = true }
 reqwest = { version = "0.12", default-features = false, features = [
     "json",
     "rustls-tls",

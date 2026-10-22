@@ -141,6 +141,8 @@ export component AppWindow inherits Window {
     in-out property <string> import-text: "";
     in-out property <string> import-status: "";
     in-out property <bool> import-error: false;
+    in-out property <int> server-count: 0;
+    in-out property <bool> tray-available: false;
     in-out property <string> server-search: "";
     in-out property <string> log-search: "";
     in-out property <bool> connection-busy: false;
@@ -337,15 +339,17 @@ export component AppWindow inherits Window {
                 Button { text: "+ Add server"; height: 30px; clicked => { root.add_server_clicked(); } }
                 Button { text: "Import from clipboard"; height: 30px; clicked => { root.import_clipboard_clicked(); } }
                 Rectangle { horizontal-stretch: 1; }
+                Text { text: root.server-count + " saved"; color: Theme.muted; vertical-alignment: center; }
             }
+            Text { text: "Paste server links (one per line) or JSON. Imports create new profiles."; color: Theme.muted; font-size: 11px; }
             HorizontalLayout {
                 spacing: 6px;
-                LineEdit {
+                TextEdit {
                     text <=> root.import-text;
-                    placeholder-text: "vmess:// ... or JSON config";
+                    height: 64px;
                     horizontal-stretch: 1;
                 }
-                Button { text: "Import"; height: 30px; clicked => { root.import_clicked(); } }
+                Button { text: "Import"; height: 32px; clicked => { root.import_clicked(); } }
             }
             if root.import-status != "": Text {
                 text: root.import-status;
@@ -538,7 +542,8 @@ export component AppWindow inherits Window {
             CheckBox { text: "NetMod TAP compatibility test (disconnect NetMod first)"; checked <=> root.netmod-compatibility; enabled: root.platform-windows; }
             CheckBox { text: root.platform-windows ? "Kill switch: block traffic when the tunnel is down" : "Kill switch · Windows TUN only"; checked <=> root.kill-switch; enabled: root.platform-windows; }
             CheckBox { text: "Auto-reconnect if the core dies or traffic fails"; checked <=> root.auto-reconnect; }
-            CheckBox { text: "Minimize to tray when the window is closed"; checked <=> root.minimize-to-tray; enabled: root.platform-windows; }
+            CheckBox { text: "Minimize to tray when the window is closed"; checked <=> root.minimize-to-tray; enabled: root.tray-available; }
+            if !root.tray-available: Text { text: "No desktop tray host is available. Minimize uses the taskbar."; color: Theme.muted; font-size: 11px; wrap: word-wrap; }
             CheckBox { text: "Start with your desktop session"; checked <=> root.start-with-windows; }
             HorizontalLayout {
                 spacing: 8px;

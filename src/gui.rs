@@ -30,6 +30,7 @@ struct UiState {
     connected: AtomicBool,
     /// Id of the server the tunnel is using.
     active_server: Mutex<String>,
+    active_endpoint: Mutex<Option<(String, u16)>>,
 }
 
 impl UiState {
@@ -51,7 +52,6 @@ impl UiState {
 }
 
 pub fn run(cfg: Arc<Mutex<AppConfig>>, logger: Logger) -> Result<i32> {
-    let _instance = crate::util::lock_instance()?;
     #[cfg(target_os = "linux")]
     if std::env::var_os("SLINT_BACKEND").is_none() {
         slint::BackendSelector::new()
@@ -177,17 +177,20 @@ pub fn run(cfg: Arc<Mutex<AppConfig>>, logger: Logger) -> Result<i32> {
         let weak = ui.as_weak();
         let cfg = cfg.clone();
         ui.window().on_close_requested(move || {
-            let to_tray = cfg!(windows) && cfg.lock().unwrap().settings.minimize_to_tray;
+            let to_tray = tray::is_available() && cfg.lock().unwrap().settings.minimize_to_tray;
             if to_tray {
                 if let Some(ui) = weak.upgrade() {
                     let _ = ui.hide();
                 }
                 slint::CloseRequestResponse::KeepWindowShown
             } else {
+                let _ = slint::quit_event_loop();
                 slint::CloseRequestResponse::HideWindow
             }
         });
     }
+
+    let latency_task = spawn_latency_reader(&ui, cfg.clone(), state.clone(), rt.clone());
 
     // ---- event pump: engine status/stats + log lines + tray ----
     let ui_weak = ui.as_weak();
@@ -199,6 +202,7 @@ pub fn run(cfg: Arc<Mutex<AppConfig>>, logger: Logger) -> Result<i32> {
     let pump_cfg = cfg.clone();
     let pump_state = state.clone();
     let logger_tab = logger.clone();
+    let had_tray = std::cell::Cell::new(tray::is_available());
     let last_tab = std::cell::Cell::new(-1i32);
     let last_mode = std::cell::RefCell::new(String::new());
     let timer = Timer::default();
@@ -208,6 +212,12 @@ pub fn run(cfg: Arc<Mutex<AppConfig>>, logger: Logger) -> Result<i32> {
         };
         let cfg = &pump_cfg;
         let state = &pump_state;
+        let tray_available = tray::is_available();
+        ui.set_tray_available(tray_available);
+        if had_tray.replace(tray_available) && !tray_available {
+            let _ = ui.show();
+            ui.window().set_minimized(false);
+        }
         let tab = ui.get_tab();
         if tab != last_tab.get() {
             last_tab.set(tab);
@@ -270,6 +280,12 @@ pub fn run(cfg: Arc<Mutex<AppConfig>>, logger: Logger) -> Result<i32> {
                                     .unwrap_or_default()
                             });
                             state.set_active(&id);
+                            let c = cfg.lock().unwrap();
+                            if let Some(server) = c.servers.iter().find(|p| p.id == id) {
+                                let endpoint = resolve_endpoint(server, c.selected_sni());
+                                *state.active_endpoint.lock().unwrap() =
+                                    Some((endpoint.address, endpoint.port));
+                            }
                         }
                         refresh_servers(&ui, cfg, state);
                     }
@@ -335,12 +351,72 @@ pub fn run(cfg: Arc<Mutex<AppConfig>>, logger: Logger) -> Result<i32> {
         }
     });
 
-    ui.run()?;
+    ui.show()?;
+    slint::run_event_loop_until_quit()?;
 
     // Graceful shutdown: restores the system proxy and stops the core.
     engine.shutdown_and_wait(Duration::from_secs(15));
+    latency_task.abort();
+    tray::shutdown();
     drop(timer);
     Ok(0)
+}
+
+fn latency_target(
+    cfg: &Arc<Mutex<AppConfig>>,
+    state: &Arc<UiState>,
+) -> Option<(String, String, u16)> {
+    let c = cfg.lock().unwrap();
+    if state.is_connected() {
+        if let Some((address, port)) = state.active_endpoint.lock().unwrap().clone() {
+            return Some((state.active(), address, port));
+        }
+    }
+    c.selected_server_profile().map(|server| {
+        let endpoint = resolve_endpoint(server, c.selected_sni());
+        (server.id.clone(), endpoint.address, endpoint.port)
+    })
+}
+
+fn spawn_latency_reader(
+    ui: &AppWindow,
+    cfg: Arc<Mutex<AppConfig>>,
+    state: Arc<UiState>,
+    rt: tokio::runtime::Handle,
+) -> tokio::task::JoinHandle<()> {
+    let weak = ui.as_weak();
+    rt.spawn(async move {
+        let mut ticker = tokio::time::interval(Duration::from_secs(3));
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut previous = None;
+        loop {
+            ticker.tick().await;
+            let target = latency_target(&cfg, &state);
+            if target != previous {
+                let message = if target.is_some() {
+                    "Measuring TCP latency…"
+                } else {
+                    "TCP latency · no server"
+                };
+                let _ = weak.upgrade_in_event_loop(move |ui| ui.set_latency(message.into()));
+                previous = target.clone();
+            }
+            let Some((_, address, port)) = target.as_ref() else {
+                continue;
+            };
+            let reading = crate::latency::measure(address, *port).await.ok();
+            let text = crate::latency::display(reading);
+            let cfg = cfg.clone();
+            let state = state.clone();
+            let _ = weak.upgrade_in_event_loop(move |ui| {
+                // Selection can change while DNS or TCP is pending. Never apply
+                // an old server's result to the newly selected server.
+                if latency_target(&cfg, &state) == target {
+                    ui.set_latency(text.into());
+                }
+            });
+        }
+    })
 }
 
 fn phase_color(p: Phase) -> slint::Color {
@@ -878,7 +954,11 @@ fn wire_callbacks(
         let weak = ui.as_weak();
         ui.on_hide_to_tray_clicked(move || {
             if let Some(ui) = weak.upgrade() {
-                ui.window().set_minimized(true);
+                if tray::is_available() && ui.get_minimize_to_tray() {
+                    let _ = ui.hide();
+                } else {
+                    ui.window().set_minimized(true);
+                }
             }
         });
     }
@@ -966,6 +1046,7 @@ fn display_name(s: &ServerProfile) -> String {
 
 fn refresh_servers(ui: &AppWindow, cfg: &Arc<Mutex<AppConfig>>, state: &Arc<UiState>) {
     let c = cfg.lock().unwrap();
+    ui.set_server_count(c.servers.len() as i32);
     let selected = c
         .selected_server
         .clone()
@@ -1026,18 +1107,6 @@ fn refresh_servers(ui: &AppWindow, cfg: &Arc<Mutex<AppConfig>>, state: &Arc<UiSt
         dashboard
             .map(|s| format!("{}  ·  SNI: {}", display_name(s), s.sni))
             .unwrap_or_else(|| "No active server".into())
-            .into(),
-    );
-    ui.set_latency(
-        dashboard
-            .map(|s| {
-                if s.latency_ms == 0 {
-                    "Latency not measured".to_string()
-                } else {
-                    format!("{} ms latency", s.latency_ms)
-                }
-            })
-            .unwrap_or_else(|| "Latency not measured".into())
             .into(),
     );
     ui.set_tunnel_mode(
@@ -1185,7 +1254,7 @@ fn open_editor(
     });
 
     // Remember which entry we are editing so Save knows where to put it back.
-    EDIT_TARGET.with(|c| *c.borrow_mut() = index);
+    EDIT_TARGET.with(|c| *c.borrow_mut() = index.map(|_| base.id.clone()));
     logger.info(format!(
         "opening the editor for '{}' (row {:?})",
         base.name, index
@@ -1200,7 +1269,7 @@ fn open_editor(
 // Index of the server row the editor is currently editing.
 thread_local! {
     static EDIT_BASE: RefCell<Option<EditorFields>> = const { RefCell::new(None) };
-    static EDIT_TARGET: RefCell<Option<usize>> = const { RefCell::new(None) };
+    static EDIT_TARGET: RefCell<Option<String>> = const { RefCell::new(None) };
 }
 
 /// Read the editor's fields back into a flat structure.
@@ -1262,8 +1331,20 @@ fn wire_editor(
     editor.on_save_clicked(move || {
         let Some(editor) = weak.upgrade() else { return };
         let fields = read_editor(&editor);
-        let index = EDIT_TARGET.with(|c| *c.borrow());
+        let target = EDIT_TARGET.with(|c| c.borrow().clone());
         let mut c = cfg_save.lock().unwrap();
+        let index = match target {
+            Some(id) => match c.servers.iter().position(|p| p.id == id) {
+                Some(index) => Some(index),
+                None => {
+                    editor.set_ed_status(
+                        "This server was deleted. Close the editor and add a new server.".into(),
+                    );
+                    return;
+                }
+            },
+            None => None,
+        };
         let base = match index {
             Some(i) => match c.servers.get(i).cloned() {
                 Some(s) => s,
@@ -1459,130 +1540,13 @@ fn import_profile(cfg: &Arc<Mutex<AppConfig>>, text: &str) -> Result<String> {
     }
     let mut c = cfg.lock().unwrap();
     let mut updated = c.clone();
-    let messages = merge_imported(&mut updated, imported);
+    let added = crate::profile_import::append(&mut updated, imported);
+    let total = updated.servers.len();
     store::save(&updated)?;
     *c = updated;
-    Ok(messages.join("; "))
-}
-
-/// Compare connection settings independently of labels and measured state.
-fn same_imported_connection(a: &ServerProfile, b: &ServerProfile) -> bool {
-    let normalize = |p: &ServerProfile| {
-        let mut p = p.clone();
-        p.id.clear();
-        p.name.clear();
-        p.remark.clear();
-        p.latency_ms = 0;
-        p.last_test.clear();
-        p
-    };
-    normalize(a) == normalize(b)
-}
-
-/// Merge freshly-parsed profiles into the config, skipping identical connections.
-/// Pure (no I/O) so it can be unit-tested.
-fn merge_imported(c: &mut AppConfig, imported: Vec<ServerProfile>) -> Vec<String> {
-    let mut messages: Vec<String> = Vec::new();
-    for mut p in imported {
-        if p.id.is_empty() {
-            p.id = uuid::Uuid::new_v4().to_string();
-        }
-        if p.name.trim().is_empty() {
-            p.name = format!("{}:{}", p.address, p.port);
-        }
-        if c.servers.iter().any(|s| same_imported_connection(s, &p)) {
-            messages.push(format!("skipped duplicate {}:{}", p.address, p.port));
-            continue;
-        }
-        if c.servers.iter().any(|s| s.id == p.id) {
-            p.id = uuid::Uuid::new_v4().to_string();
-        }
-        if c.selected_server.is_none() {
-            c.selected_server = Some(p.id.clone());
-        }
-        messages.push(format!("added {}", p.name));
-        c.servers.push(p);
-    }
-    messages
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn srv(addr: &str, port: u16, net: &str) -> ServerProfile {
-        ServerProfile {
-            address: addr.into(),
-            port,
-            network: net.into(),
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn import_adds_and_selects_first() {
-        let mut c = AppConfig::default();
-        let msgs = merge_imported(&mut c, vec![srv("a.example", 443, "ws")]);
-        assert_eq!(c.servers.len(), 1);
-        assert_eq!(c.selected_server, Some(c.servers[0].id.clone()));
-        assert!(msgs[0].starts_with("added"));
-    }
-
-    #[test]
-    fn import_skips_identical_connections() {
-        let mut c = AppConfig::default();
-        merge_imported(&mut c, vec![srv("a.example", 443, "ws")]);
-        let msgs = merge_imported(&mut c, vec![srv("a.example", 443, "ws")]);
-        assert_eq!(c.servers.len(), 1);
-        assert!(msgs[0].starts_with("skipped duplicate"));
-    }
-
-    #[test]
-    fn import_keeps_distinct_accounts_and_connection_settings() {
-        let mut c = AppConfig::default();
-        let base = srv("a.example", 443, "ws");
-        let mut profiles = vec![base.clone()];
-        for change in 0..5 {
-            let mut p = base.clone();
-            match change {
-                0 => p.uuid = "other-account".into(),
-                1 => p.sni = "other.example".into(),
-                2 => p.ws_path = "/other".into(),
-                3 => p.ws_host = "host.example".into(),
-                _ => p.protocol = "vless".into(),
-            }
-            profiles.push(p);
-        }
-        merge_imported(&mut c, profiles);
-        assert_eq!(c.servers.len(), 6);
-        let ids: std::collections::HashSet<_> = c.servers.iter().map(|s| &s.id).collect();
-        assert_eq!(ids.len(), 6, "distinct imported profiles need distinct IDs");
-    }
-
-    #[test]
-    fn import_duplicate_ignores_labels_and_test_results() {
-        let mut c = AppConfig::default();
-        let base = srv("a.example", 443, "ws");
-        merge_imported(&mut c, vec![base.clone()]);
-        let mut renamed = base;
-        renamed.id = "new-id".into();
-        renamed.name = "new label".into();
-        renamed.remark = "new remark".into();
-        renamed.latency_ms = 80;
-        renamed.last_test = "recent".into();
-        merge_imported(&mut c, vec![renamed]);
-        assert_eq!(c.servers.len(), 1);
-    }
-
-    #[test]
-    fn import_does_not_select_if_already_selected() {
-        let mut c = AppConfig {
-            selected_server: Some("keep-me".into()),
-            ..Default::default()
-        };
-        merge_imported(&mut c, vec![srv("a.example", 443, "ws")]);
-        assert_eq!(c.selected_server.as_deref(), Some("keep-me"));
-    }
+    Ok(format!(
+        "Added {added} server(s); {total} saved. Existing profiles kept."
+    ))
 }
 
 fn request_editor_close(editor: &ServerEditor) {

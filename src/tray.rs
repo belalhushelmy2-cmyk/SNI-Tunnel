@@ -7,6 +7,12 @@ use std::sync::mpsc;
 use tray_icon::menu::{IsMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
+static AVAILABLE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub fn is_available() -> bool {
+    AVAILABLE.load(std::sync::atomic::Ordering::Relaxed)
+}
+pub fn shutdown() {}
+
 pub const MENU_SHOW: &str = "sni-tunnel.show";
 pub const MENU_CONNECT: &str = "sni-tunnel.connect";
 pub const MENU_DISCONNECT: &str = "sni-tunnel.disconnect";
@@ -41,7 +47,10 @@ pub fn spawn() -> Result<()> {
         .context("spawn tray thread")?;
 
     match rx.recv() {
-        Ok(Ok(())) => Ok(()),
+        Ok(Ok(())) => {
+            AVAILABLE.store(true, std::sync::atomic::Ordering::Relaxed);
+            Ok(())
+        }
         Ok(Err(e)) => anyhow::bail!("{e}"),
         Err(_) => anyhow::bail!("tray thread exited during startup"),
     }

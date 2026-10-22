@@ -12,7 +12,7 @@ system-wide TUN test was performed during this V2 validation.
 
 | Check | Result | Scope |
 | --- | --- | --- |
-| Rust regression suite | 121 passed; 5 opt-in tests ignored | `cargo test --all --locked`: 111 unit (including GUI import), 3 persistence/migration integration, 7 workflow tests |
+| Rust regression suite | 120 passed; 5 opt-in tests ignored | `cargo test --all --locked`: 109 unit, 4 persistence/migration integration, 7 workflow tests |
 | Python suite | 12 passed | Existing Linux profile/editor regressions and shared network-helper recovery/DNS tests; includes a legacy Tk X11 editor test, not native Slint input automation |
 | Native Linux GUI build | Passed | Release software-rendered Slint GUI, built with glibc 2.30 target |
 | Windows x64 GUI build | Passed | Cross-compiled GNU release executable; Windows runtime has not been executed here |
@@ -138,12 +138,32 @@ Sidebar icons/labels/markers are vertically centered in fixed 44px rows; focus
 and selection retain constant border geometry. The software-rendered sidebar
 preview was visually inspected. These checks do not add a new network test.
 
-## Server import follow-up
+## Server import, tray and latency follow-up
 
-Import and clipboard results are now visible directly on the Servers page and
-are independent of engine status updates. Different credentials, protocols, SNI,
-Host and paths on one host/port are retained; only identical connection settings
-are skipped. Imported ID collisions are reassigned, search is cleared after a
-successful import, and failed saves leave the in-memory configuration unchanged.
-The default-feature Rust regression suite passed all 121 tests (5 ignored),
-including distinct-connection and duplicate-metadata cases.
+Imports now append every parsed profile with a fresh ID and a distinct display
+name, including repeated imports. Neither address/port nor imported IDs select
+an existing row for replacement. All entries in a batch are checked before
+saving; a malformed link rejects the batch rather than silently omitting it.
+Multiline entry, saved counts and results are visible directly on Servers.
+CLI imports use the same append path; mutating CLI commands cannot race a running
+GUI. GUI launch with --vmess merges into the checked saved store rather than
+saving an ephemeral single-profile config. Editor saves locate the original
+profile by stable ID, so deleting another row cannot redirect the save.
+
+The default-feature Rust suite passed 120 tests (5 ignored), including repeat
+imports across process restarts, immutable original entries, same-ID imports,
+multiple links on one line, invalid batch rejection and wrapped subscriptions.
+The latency test connects to an actual loopback listener and reports failure
+after that listener is closed. The reader samples server TCP setup every three
+seconds, bounds each sample at two seconds, ignores results for stale targets,
+and stops with the app. Samples are not written to the profile store.
+
+Linux tray support uses StatusNotifierItem over session D-Bus, including menu
+commands and single-click restore. Closing hides only when a host is available;
+loss of the host restores the window. Without a host Minimize uses the taskbar.
+Native Waybar/D-Bus checks passed: registration, close-to-tray while the process
+remained alive, click-to-restore, menu labels, graceful Quit and deregistration.
+Three loopback probes arrived at intervals of 3.0 and 3.0 seconds. A GUI launched
+with --vmess preserved two already-stored profiles and appended the third.
+Output validation artifacts record these checks. A session tray host is required; plain X11 legacy tray
+protocols are not implemented.

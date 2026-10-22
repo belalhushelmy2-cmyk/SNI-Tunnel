@@ -32,12 +32,14 @@ jobs:
           toolchain: '1.99.1'
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
       - name: Install Linux build and UI check dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake pkg-config libfontconfig1-dev libxkbcommon-dev libx11-dev libgl1-mesa-dev python3-tk python3-venv xvfb fonts-dejavu-core
+          sudo apt-get install -y build-essential cmake pkg-config libfontconfig1-dev libxkbcommon-dev libxkbcommon-x11-0 libxcb-xkb1 libxcursor1 libxrandr2 libxi6 libx11-dev libgl1-mesa-dev python3-tk python3-venv xvfb fonts-dejavu-core
       - name: Check formatting
-        run: rustfmt --edition 2021 --config skip_children=true --check src/migration.rs src/linux_tunnel.rs src/gui.rs src/engine.rs src/model.rs src/util.rs src/store.rs src/session.rs src/main.rs src/vmess.rs src/sysproxy_linux.rs src/autostart_linux.rs build.rs tests/migration_v2.rs examples/v2_preview.rs
+        run: rustfmt --edition 2021 --config skip_children=true --check src/migration.rs src/linux_tunnel.rs src/gui.rs src/engine.rs src/model.rs src/util.rs src/store.rs src/session.rs src/main.rs src/vmess.rs src/sysproxy_linux.rs src/autostart_linux.rs build.rs tests/migration_v2.rs tests/import_persistence.rs src/profile_import.rs src/latency.rs src/tray_linux.rs src/tray.rs src/storecli.rs examples/v2_preview.rs
       - name: Clippy
         run: cargo clippy --all-targets --locked
       - name: Rust regression suite
@@ -111,6 +113,8 @@ jobs:
           if (!(Test-Path (Join-Path $nsis 'makensis.exe'))) { choco install nsis -y --no-progress }
           $nsis | Out-File $env:GITHUB_PATH -Encoding utf8 -Append
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
       - name: Rust Windows regression suite
         run: cargo test --no-default-features --locked
       - name: Build bundled installer

@@ -285,7 +285,13 @@ impl From<ServerFile> for ServerProfile {
 }
 
 pub fn load_checked() -> Result<AppConfig> {
-    let text = std::fs::read_to_string(util::config_path()).context("Read saved profiles")?;
+    let text = match std::fs::read_to_string(util::config_path()) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(AppConfig::default())
+        }
+        Err(error) => return Err(error).context("Read saved profiles"),
+    };
     let file: ConfigFile = serde_json::from_str(&text).context("Parse saved profiles")?;
     anyhow::ensure!(
         file.version <= FORMAT_VERSION,

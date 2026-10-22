@@ -533,11 +533,16 @@ fn autostart_cmd(args: &[String]) -> Result<i32> {
 
 #[cfg(feature = "gui")]
 fn gui_cmd(o: &Opts, logger: &Logger) -> Result<i32> {
-    let cfg = if o.vmess.is_some() || has_overrides(o) {
-        build_app_config(o)?
-    } else {
-        store::load()
-    };
+    let _instance = util::lock_instance()?;
+    let mut cfg = store::load_checked()?;
+    if let Some(source) = o.vmess.as_deref() {
+        let imported = load_profile(source)?;
+        let (profile, _) = apply_overrides(&imported, o)?;
+        sni_tunnel::profile_import::append(&mut cfg, vec![profile]);
+        store::save(&cfg)?;
+    } else if has_overrides(o) {
+        bail!("GUI overrides require --vmess; edit the selected profile in the app instead");
+    }
     logger.set_secrets(cfg.servers.iter().map(|s| s.uuid.clone()).collect());
     let cfg = Arc::new(Mutex::new(cfg));
     gui::run(cfg, logger.clone())

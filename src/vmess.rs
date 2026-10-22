@@ -499,34 +499,42 @@ pub fn parse_any(text: &str) -> Result<Vec<ServerProfile>> {
         return parse_json_config(trimmed);
     }
 
-    // 2. Lines containing vmess://, vless:// or trojan:// links.
-    let mut out = Vec::new();
-    let mut had_link = false;
-    for line in trimmed.lines() {
-        for scheme in ["vmess://", "vless://", "trojan://"] {
-            if let Some(idx) = line.find(scheme) {
-                had_link = true;
-                match parse_vmess_link(&line[idx..]) {
-                    Ok(p) => out.push(p),
-                    Err(e) => log::warn!("skipping malformed {scheme} link: {e}"),
-                }
-                break;
-            }
+    // Parse every link, including multiple links pasted on one line. A bad
+    // entry aborts the batch instead of silently reporting partial success.
+    let lower = trimmed.to_ascii_lowercase();
+    let mut starts: Vec<usize> = ["vmess://", "vless://", "trojan://"]
+        .into_iter()
+        .flat_map(|scheme| {
+            lower
+                .match_indices(scheme)
+                .map(|(offset, _)| offset)
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    starts.sort_unstable();
+    if !starts.is_empty() {
+        let mut profiles = Vec::new();
+        for (number, start) in starts.iter().copied().enumerate() {
+            let end = starts.get(number + 1).copied().unwrap_or(trimmed.len());
+            let link = trimmed[start..end].lines().next().unwrap_or("").trim();
+            profiles.push(parse_vmess_link(link).map_err(|_| anyhow!(
+                "Server link {} is invalid; no profiles were imported. Check the complete link and try again.", number + 1
+            ))?);
         }
-    }
-    if had_link {
-        if out.is_empty() {
-            bail!("no valid vmess links found");
-        }
-        return Ok(out);
+        return Ok(profiles);
     }
 
     // 3. Base64 subscription blob.
-    if let Some(raw) = b64_decode_variants(trimmed) {
+    let compact: String = trimmed
+        .chars()
+        .filter(|c| !c.is_ascii_whitespace())
+        .collect();
+    if let Some(raw) = b64_decode_variants(&compact) {
         if let Ok(decoded) = String::from_utf8(raw) {
-            if decoded.contains("vmess://")
-                || decoded.contains("vless://")
-                || decoded.contains("trojan://")
+            let lower = decoded.to_ascii_lowercase();
+            if lower.contains("vmess://")
+                || lower.contains("vless://")
+                || lower.contains("trojan://")
             {
                 return parse_any(&decoded);
             }
@@ -540,6 +548,26 @@ pub fn parse_any(text: &str) -> Result<Vec<ServerProfile>> {
 mod tests {
     use super::*;
     use base64::engine::general_purpose::STANDARD;
+
+    #[test]
+    fn batch_import_preserves_every_link_and_rejects_partial_success() {
+        let good = mk_link(
+            r#"{"add":"192.0.2.10","id":"b831381d-6324-4d53-ad4f-8cda48b30811","port":443}"#,
+        );
+        assert_eq!(parse_any(&format!("{good}\n{good}")).unwrap().len(), 2);
+        assert_eq!(parse_any(&format!("{good} {good}")).unwrap().len(), 2);
+        assert!(parse_any(&format!("{good}\nvmess://broken")).is_err());
+        let upper = good.replacen("vmess://", "VMESS://", 1);
+        assert_eq!(parse_any(&upper).unwrap().len(), 1);
+        let encoded = STANDARD.encode(format!("{good}\n{good}"));
+        let wrapped = encoded
+            .as_bytes()
+            .chunks(32)
+            .map(|c| std::str::from_utf8(c).unwrap())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(parse_any(&wrapped).unwrap().len(), 2);
+    }
 
     fn mk_link(json: &str) -> String {
         format!("vmess://{}", STANDARD.encode(json))
