@@ -27,7 +27,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--binary', type=Path, default=ROOT / 'target/x86_64-unknown-linux-gnu/release/sni-tunnel')
     parser.add_argument('--tool-dir', type=Path, default=ROOT / 'target/appimage-tools')
-    parser.add_argument('--output', type=Path, default=ROOT / 'releases/v2/linux/SNI-Tunnel-V2-2.0.0-x86_64.AppImage')
+    parser.add_argument('--output', type=Path, default=ROOT / 'releases/v2/linux/SNI-Tunnel-V2-2.0.1-x86_64.AppImage')
     args = parser.parse_args()
     if not args.binary.is_file():
         parser.error('Build the portable Linux release first (packaging/linux/build-portable.sh)')
@@ -78,7 +78,7 @@ def main():
     (appdir/'payload.sha256').write_text(''.join(f'{sha(p)}  {p.relative_to(payload).as_posix()}\n' for p in files))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
-    env.update(ARCH='x86_64', VERSION='2.0.0', SOURCE_DATE_EPOCH='1792627200')
+    env.update(ARCH='x86_64', VERSION='2.0.1', SOURCE_DATE_EPOCH='1792627200')
     subprocess.run([
         str(args.tool_dir.resolve()/'appimagetool.AppImage'), '--appimage-extract-and-run',
         '--runtime-file', str(args.tool_dir.resolve()/'runtime-x86_64'),

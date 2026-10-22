@@ -45,25 +45,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     slint::platform::set_platform(Box::new(PreviewPlatform(windows.clone())))?;
     let ui = AppWindow::new()?;
     ui.on_matches(|text, query| text.to_lowercase().contains(&query.to_lowercase()));
-    ui.set_servers(slint::ModelRc::new(slint::VecModel::from(vec![
-        ServerRow {
-            name: "Example profile — offline preview".into(),
-            addr: "server.example".into(),
-            port: "443".into(),
-            transport: "VMess · WS · TLS".into(),
-            sni: "sni.example".into(),
-            status: "Not tested".into(),
-            latency: "—".into(),
-            selected: true,
-            source_index: 0,
-        },
-    ])));
+    ui.set_servers(slint::ModelRc::new(slint::VecModel::from(
+        (0..5)
+            .map(|i| ServerRow {
+                name: format!("Profile {} — offline preview", i + 1).into(),
+                addr: format!("server-{}.example", i + 1).into(),
+                port: "443".into(),
+                transport: "VMess · WS · TLS".into(),
+                sni: "sni.example".into(),
+                status: "Not tested".into(),
+                latency: "—".into(),
+                selected: false,
+                source_index: i,
+            })
+            .collect::<Vec<_>>(),
+    )));
+    ui.set_server_count(5);
     ui.show()?;
     let main = windows.borrow().last().unwrap().clone();
     main.dispatch_event(WindowEvent::ScaleFactorChanged {
         scale_factor: scale,
     });
-    main.set_size(LogicalSize::new(980., 720.));
+    main.set_size(LogicalSize::new(980., 900.));
     // A complete first click must activate each item, including icon/padding hits.
     for (index, x) in [(1, 25.), (2, 80.), (3, 151.), (4, 25.), (5, 80.), (0, 151.)] {
         let position = LogicalPosition::new(x, 114. + index as f32 * 50.);
@@ -96,6 +99,55 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ui.set_tab(index);
         save(&main, &directory, &format!("page-{index}"));
     }
+    ui.set_tab(1);
+    save(&main, &directory, "five-servers");
+    let used = Rc::new(std::cell::Cell::new(-1));
+    let used_callback = used.clone();
+    ui.on_use_server(move |source| used_callback.set(source));
+    for index in 0..5 {
+        used.set(-1);
+        let position = LogicalPosition::new(588., 284. + index as f32 * 88.);
+        main.dispatch_event(WindowEvent::PointerMoved { position });
+        main.dispatch_event(WindowEvent::PointerPressed {
+            position,
+            button: PointerEventButton::Left,
+        });
+        main.dispatch_event(WindowEvent::PointerReleased {
+            position,
+            button: PointerEventButton::Left,
+        });
+        assert_eq!(
+            used.get(),
+            index,
+            "all five server rows must have separate, correct Use buttons"
+        );
+    }
+    ui.set_compact_layout(true);
+    main.set_size(LogicalSize::new(980., 720.));
+    save(&main, &directory, "five-servers-compact");
+    let mut compact_rows = std::collections::BTreeSet::new();
+    for y in (240..700).step_by(10) {
+        used.set(-1);
+        let position = LogicalPosition::new(588., y as f32);
+        main.dispatch_event(WindowEvent::PointerMoved { position });
+        main.dispatch_event(WindowEvent::PointerPressed {
+            position,
+            button: PointerEventButton::Left,
+        });
+        main.dispatch_event(WindowEvent::PointerReleased {
+            position,
+            button: PointerEventButton::Left,
+        });
+        if used.get() >= 0 {
+            compact_rows.insert(used.get());
+        }
+    }
+    assert_eq!(
+        compact_rows,
+        (0..5).collect(),
+        "compact view must show five independently clickable profiles"
+    );
+    ui.set_compact_layout(false);
     ui.set_tab(0);
     main.set_size(LogicalSize::new(800., 600.));
     let before = save(&main, &directory, "dashboard-small");
@@ -119,6 +171,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &after[after.len() - footer..],
         "editor footer must remain fixed while scrolling"
     );
-    println!("PASS: six first-click menu actions; Space/Enter; six pages; 800x600 dashboard scroll; 660x420 editor scroll and fixed footer; scale {scale}");
+    println!("PASS: five separate server rows in normal and compact views; six first-click menu actions; Space/Enter; six pages; 800x600 dashboard scroll; 660x420 editor scroll and fixed footer; scale {scale}");
     Ok(())
 }

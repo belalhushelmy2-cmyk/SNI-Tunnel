@@ -9,8 +9,8 @@ V2 data directory described in MIGRATION.md.
 Run:
 
 ```sh
-chmod +x SNI-Tunnel-V2-2.0.0-x86_64.AppImage
-./SNI-Tunnel-V2-2.0.0-x86_64.AppImage
+chmod +x SNI-Tunnel-V2-2.0.1-x86_64.AppImage
+./SNI-Tunnel-V2-2.0.1-x86_64.AppImage
 ```
 
 CLI commands are forwarded, for example `--help` or `migrate SOURCE_DIRECTORY`.
@@ -26,7 +26,7 @@ An AppImage cannot supply those host networking/privilege services itself.
 If FUSE mounting is unavailable:
 
 ```sh
-./SNI-Tunnel-V2-2.0.0-x86_64.AppImage --appimage-extract-and-run
+./SNI-Tunnel-V2-2.0.1-x86_64.AppImage --appimage-extract-and-run
 ```
 
 The launcher verifies its payload hashes and copies the executables/helper to
@@ -46,7 +46,7 @@ python3 packaging/linux/appimage.py
 The builder downloads hash-pinned official appimagetool 1.9.1 and type2-runtime
 20251108 into its build-tool cache. It supplies the pinned runtime explicitly;
 it does not select an unversioned continuous release or copy host Arch libraries.
-The output is `releases/v2/linux/SNI-Tunnel-V2-2.0.0-x86_64.AppImage`.
+The output is `releases/v2/linux/SNI-Tunnel-V2-2.0.1-x86_64.AppImage`.
 
 References: [AppDir specification](https://docs.appimage.org/reference/appdir.html),
 [appimagetool](https://github.com/AppImage/appimagetool/tree/1.9.1),

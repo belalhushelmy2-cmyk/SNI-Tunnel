@@ -12,9 +12,9 @@ The Linux client now uses the native Slint interface.
 | Platform | Artifact | Launch |
 | --- | --- | --- |
 | Windows 10/11 x64 | `SNI-Tunnel-V2-Setup-x64.exe` | Install, then open SNI Tunnel V2 |
-| Linux x86_64 | `SNI-Tunnel-V2-2.0.0-x86_64.AppImage` | Mark executable and open |
-| Debian-family amd64 | `sni-tunnel-v2_2.0.0_amd64.deb` | Install using the package manager |
-| Portable Linux | `sni-tunnel-v2_2.0.0_amd64.tar.gz` | Extract and run `start.sh` |
+| Linux x86_64 | `SNI-Tunnel-V2-2.0.1-x86_64.AppImage` | Mark executable and open |
+| Debian-family amd64 | `sni-tunnel-v2_2.0.1_amd64.deb` | Install using the package manager |
+| Portable Linux | `sni-tunnel-v2_2.0.1_amd64.tar.gz` | Extract and run `start.sh` |
 
 Verify downloads against the release's `SHA256SUMS`. The installers include their
 Xray/helper runtime assets; Rust and Cargo are build tools, not user requirements.
@@ -59,7 +59,7 @@ Windows DPAPI data must stay with the same Windows account. Example for the
 previous Linux Tk store:
 
 ```sh
-./SNI-Tunnel-V2-2.0.0-x86_64.AppImage migrate "$HOME/.config/sni-tunnel-linux"
+./SNI-Tunnel-V2-2.0.1-x86_64.AppImage migrate "$HOME/.config/sni-tunnel-linux"
 ```
 
 Disconnect the previous tunnel first. Do not run old/new clients against the same

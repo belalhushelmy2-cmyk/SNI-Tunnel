@@ -12,7 +12,7 @@ system-wide TUN test was performed during this V2 validation.
 
 | Check | Result | Scope |
 | --- | --- | --- |
-| Rust regression suite | 120 passed; 5 opt-in tests ignored | `cargo test --all --locked`: 109 unit, 4 persistence/migration integration, 7 workflow tests |
+| Rust regression suite | 122 passed; 5 opt-in tests ignored | `cargo test --all --locked`: 111 unit, 4 persistence/migration integration, 7 workflow tests |
 | Python suite | 12 passed | Existing Linux profile/editor regressions and shared network-helper recovery/DNS tests; includes a legacy Tk X11 editor test, not native Slint input automation |
 | Native Linux GUI build | Passed | Release software-rendered Slint GUI, built with glibc 2.30 target |
 | Windows x64 GUI build | Passed | Cross-compiled GNU release executable; Windows runtime has not been executed here |
@@ -167,3 +167,13 @@ Three loopback probes arrived at intervals of 3.0 and 3.0 seconds. A GUI launche
 with --vmess preserved two already-stored profiles and appended the third.
 Output validation artifacts record these checks. A session tray host is required; plain X11 legacy tray
 protocols are not implemented.
+
+## Five-profile list regression — 2.0.1
+
+Reproduced five saved profiles occupying a single screen row. The repeated root's
+visible binding caused Slint to insert a zero-height visibility wrapper; all row
+geometry overlapped. The pre-fix pointer test clicked the first row and received
+the last profile's source index (4 instead of 0). Removed root visibility and
+filtered the model in Rust. All five Use buttons are tested independently, in
+normal and compact layouts at 100% and 150% scale. Filtering and sorting tests
+retain original source indices for row actions. Profiles are not rewritten.

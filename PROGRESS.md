@@ -1,3 +1,13 @@
+# Five-profile list hotfix — 2.0.1
+
+Reproduced the user's five-saved/one-visible report. The repeated ListView root
+had a visible binding; Slint lowered it to a zero-height wrapper and all five
+rows overlapped. Added a pointer regression that fails on the old layout
+(first click reaches source index 4 instead of 0), moved search filtering into
+the model, and kept stable source indices after sorting/filtering. Added normal
+and compact five-row tests at both scales. This patch is released as 2.0.1,
+preserving the already-published 2.0.0 and all existing user profile data.
+
 # Append-only import, native tray and live latency — 2026-10-22
 
 Imports now always append with fresh IDs and unique labels across GUI and CLI.
@@ -7,7 +17,7 @@ races. Added the native Linux StatusNotifierItem tray, safe hide/restore/quit
 behavior, and a three-second TCP latency reader with bounded probes and stale
 result rejection. Regression suite: 120 passed, 5 ignored. Native Waybar checks passed: icon registration, close/hide, restore, Quit,
 deregistration, GUI --vmess profile preservation and 3.0-second TCP cadence.
-The portable rebuild is in progress. The first GitHub Windows build passed;
+The portable rebuild and native tray checks passed; 2.0.0 was published successfully. The first GitHub Windows build passed;
 Linux tests/build passed but the AppImage startup smoke failed. Added missing
 X11 runtime dependencies and startup-log diagnostics before retrying CI.
 

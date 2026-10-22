@@ -1,13 +1,13 @@
 SNI TUNNEL V2 — SEPARATE RELEASE
 
 Windows: SNI-Tunnel-V2-Setup-x64.exe installs under Program Files\SNI Tunnel V2.
-Linux: sni-tunnel-v2_2.0.0_amd64.deb installs under /usr/lib/sni-tunnel-v2.
+Linux: sni-tunnel-v2_2.0.1_amd64.deb installs under /usr/lib/sni-tunnel-v2.
 The GUI is native Rust/Slint on both systems. No Rust, Cargo, Tk or development
 workspace is required at runtime. Linux includes the existing Xray 1.6.1/BadVPN
 core and uses Python 3 only for the separately elevated network helper.
 
 Linux installation (only after reviewing the release verification report):
-  sudo apt install ./sni-tunnel-v2_2.0.0_amd64.deb
+  sudo apt install ./sni-tunnel-v2_2.0.1_amd64.deb
 Start SNI Tunnel V2 from the desktop menu or run sni-tunnel-v2.
 Portable Linux: extract the tar.gz and run ./start.sh in its directory.
 The DEB records the actual minimum glibc requirement of its compiled binary.

@@ -443,6 +443,16 @@ fn wire_callbacks(
         let weak = ui.as_weak();
         let cfg = cfg.clone();
         let state = state.clone();
+        ui.on_server_search_changed(move || {
+            if let Some(ui) = weak.upgrade() {
+                refresh_servers(&ui, &cfg, &state);
+            }
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        let cfg = cfg.clone();
+        let state = state.clone();
         ui.on_sort_changed(move || {
             if let Some(ui) = weak.upgrade() {
                 refresh_servers(&ui, &cfg, &state);
@@ -1044,6 +1054,75 @@ fn display_name(s: &ServerProfile) -> String {
     }
 }
 
+fn server_indices(config: &AppConfig, search: &str, sort: &str) -> Vec<usize> {
+    let search = search.to_lowercase();
+    let mut indices: Vec<_> = config
+        .servers
+        .iter()
+        .enumerate()
+        .filter(|(_, profile)| {
+            search.is_empty()
+                || [&profile.name, &profile.address, &profile.sni]
+                    .iter()
+                    .any(|value| value.to_lowercase().contains(&search))
+        })
+        .map(|(index, _)| index)
+        .collect();
+    if sort == "Latency" {
+        indices.sort_by_key(|index| match config.servers[*index].latency_ms {
+            0 => u32::MAX,
+            ms => ms,
+        });
+    } else {
+        indices.sort_by_key(|index| config.servers[*index].name.to_lowercase());
+    }
+    indices
+}
+
+#[cfg(test)]
+mod server_list_tests {
+    use super::*;
+    fn config() -> AppConfig {
+        AppConfig {
+            servers: ["Zed", "Alpha", "Echo", "Bravo", "Delta"]
+                .iter()
+                .enumerate()
+                .map(|(index, name)| ServerProfile {
+                    name: (*name).into(),
+                    address: format!("server-{index}.example"),
+                    sni: if index == 2 || index == 4 {
+                        "shared.example".into()
+                    } else {
+                        String::new()
+                    },
+                    latency_ms: (index * 10) as u32,
+                    ..Default::default()
+                })
+                .collect(),
+            ..Default::default()
+        }
+    }
+    #[test]
+    fn all_five_profiles_get_separate_sorted_rows_with_original_indices() {
+        let config = config();
+        assert_eq!(server_indices(&config, "", "Name"), vec![1, 3, 4, 2, 0]);
+        assert_eq!(server_indices(&config, "", "Latency"), vec![1, 2, 3, 4, 0]);
+    }
+    #[test]
+    fn filtering_preserves_the_real_source_index_for_row_actions() {
+        let config = config();
+        assert_eq!(
+            server_indices(&config, "SHARED.EXAMPLE", "Name"),
+            vec![4, 2]
+        );
+        assert_eq!(server_indices(&config, "server-3", "Name"), vec![3]);
+        assert_eq!(
+            server_indices(&config, "missing", "Name"),
+            Vec::<usize>::new()
+        );
+    }
+}
+
 fn refresh_servers(ui: &AppWindow, cfg: &Arc<Mutex<AppConfig>>, state: &Arc<UiState>) {
     let c = cfg.lock().unwrap();
     ui.set_server_count(c.servers.len() as i32);
@@ -1053,21 +1132,15 @@ fn refresh_servers(ui: &AppWindow, cfg: &Arc<Mutex<AppConfig>>, state: &Arc<UiSt
         .or_else(|| c.servers.first().map(|s| s.id.clone()));
     let active = state.active();
     let connected = state.is_connected();
-    let mut ordered: Vec<_> = c.servers.iter().enumerate().collect();
-    if ui.get_server_sort() == "Latency" {
-        ordered.sort_by_key(|(_, s)| {
-            if s.latency_ms == 0 {
-                u32::MAX
-            } else {
-                s.latency_ms
-            }
-        });
-    } else {
-        ordered.sort_by_key(|(_, s)| s.name.to_lowercase());
-    }
+    let ordered = server_indices(
+        &c,
+        ui.get_server_search().as_str(),
+        ui.get_server_sort().as_str(),
+    );
     let rows: Vec<ServerRow> = ordered
         .into_iter()
-        .map(|(index, s)| {
+        .map(|index| {
+            let s = &c.servers[index];
             let is_active = s.id == active;
             let status = if is_active && connected {
                 "connected"

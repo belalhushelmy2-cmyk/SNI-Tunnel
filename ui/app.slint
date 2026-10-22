@@ -154,6 +154,7 @@ export component AppWindow inherits Window {
     in-out property <float> traffic-peak: 1;
     in-out property <string> server-sort: "Name";
     callback sort-changed();
+    callback server-search-changed();
     in-out property <string> active-profile: "No active server";
 
     // ---- reconnect prompt ----
@@ -339,7 +340,7 @@ export component AppWindow inherits Window {
                 Button { text: "+ Add server"; height: 30px; clicked => { root.add_server_clicked(); } }
                 Button { text: "Import from clipboard"; height: 30px; clicked => { root.import_clipboard_clicked(); } }
                 Rectangle { horizontal-stretch: 1; }
-                Text { text: root.server-count + " saved"; color: Theme.muted; vertical-alignment: center; }
+                Text { text: (root.server-search == "" ? "" : root.servers.length + " shown · ") + root.server-count + " saved"; color: Theme.muted; vertical-alignment: center; }
             }
             Text { text: "Paste server links (one per line) or JSON. Imports create new profiles."; color: Theme.muted; font-size: 11px; }
             HorizontalLayout {
@@ -358,14 +359,15 @@ export component AppWindow inherits Window {
                 font-size: 12px;
             }
             HorizontalLayout { spacing: 10px;
-                LineEdit { text <=> root.server-search; placeholder-text: "Search servers, address or SNI"; horizontal-stretch: 1; }
+                LineEdit { text <=> root.server-search; edited => { root.server-search-changed(); } placeholder-text: "Search servers, address or SNI"; horizontal-stretch: 1; }
                 ComboBox { model: ["Name", "Latency"]; current-value <=> root.server-sort; selected(value) => { root.server-sort = value; root.sort-changed(); } width: 120px; }
             }
             if root.servers.length == 0: Text { text: "Your servers belong here. Add a profile or import a VMess link to begin."; color: Theme.muted; wrap: word-wrap; font-size: 14px; }
             ListView {
                 for row[i] in root.servers: Rectangle {
-                    visible: root.server-search == "" || root.matches(row.name, root.server-search) || root.matches(row.addr, root.server-search) || root.matches(row.sni, root.server-search);
-                    height: self.visible ? (Preferences.compact-layout ? 72px : 88px) : 0px;
+                    // Filtering is applied to the model. A visible binding on
+                    // the repeated root inserts a zero-height wrapper in Slint.
+                    height: Preferences.compact-layout ? 72px : 88px;
                     border-radius: 10px;
                     background: row.selected ? Theme.panel-hi : Theme.panel;
                     TouchArea {
