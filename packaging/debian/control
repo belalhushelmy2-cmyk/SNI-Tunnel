@@ -1,0 +1,17 @@
+Package: sni-tunnel
+Version: 0.4.0
+Section: net
+Priority: optional
+Architecture: amd64
+Depends: libc6, ca-certificates
+Recommends: xray-core
+Description: VMess/VLESS/Trojan client with a custom TLS SNI and a full-tunnel mode
+ SNI Tunnel is a lightweight client for VMess, VLESS and Trojan servers that
+ supports an independent custom TLS SNI (the server name may differ from the
+ address that is dialled).
+ .
+ It can run as a system proxy (Windows) or as a full tunnel that routes the
+ whole device through the server (TUN mode, Windows, requires Administrator).
+ .
+ The tunneling itself is done by Xray-core, which is downloaded and verified
+ against a pinned SHA-256 on first use.

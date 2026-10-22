@@ -1,0 +1,5 @@
+/* Windows resource script: the application icon.
+ *
+ * The path is relative to this file (assets/app.rc -> assets/icon.ico).
+ */
+1 ICON "icon.ico"

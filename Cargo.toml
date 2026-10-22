@@ -1,0 +1,114 @@
+[package]
+name = "sni-tunnel"
+version = "2.0.0"
+edition = "2021"
+build = "build.rs"
+description = "SNI Tunnel - lightweight VMess + custom TLS SNI client (Windows desktop app, headless client for Linux)"
+
+[features]
+# The desktop GUI (Slint + tray). Disable it for a headless build, e.g. on a
+# Linux server or router where there is no display.
+default = ["gui"]
+gui = ["dep:slint", "dep:tray-icon", "dep:slint-build"]
+
+[dependencies]
+slint = { version = "1.18", default-features = false, optional = true, features = [
+    "std",
+    "backend-winit",
+    "renderer-femtovg",
+    "renderer-software",
+    "compat-1-2",
+] }
+
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "net",
+    "io-util",
+    "time",
+    "sync",
+    "process",
+    "fs",
+    "signal",
+] }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+sha2 = "0.10"
+hex = "0.4"
+anyhow = "1"
+thiserror = "2"
+uuid = { version = "1", features = ["v4"] }
+log = { version = "0.4", features = ["std"] }
+
+# Only the deflate codec is needed (the Xray archive is zip/deflate). The
+# other codecs pull in C libraries that would have to be cross-compiled.
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+# ---------------------------------------------------------------------------
+# Windows: Schannel (no C crypto, uses the Windows certificate store)
+# ---------------------------------------------------------------------------
+[target.'cfg(windows)'.dependencies]
+reqwest = { version = "0.12", features = ["json", "default-tls"] }
+native-tls = { version = "0.2", features = ["alpn"] }
+tokio-native-tls = "0.3"
+winreg = "0.55"
+
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Cryptography",
+    "Win32_Networking_WinInet",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Shell",
+    "Win32_System_Threading",
+    "Win32_System_JobObjects",
+    "Win32_System_Console",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+] }
+
+tray-icon = { version = "0.26", optional = true }
+
+# ---------------------------------------------------------------------------
+# Other platforms: rustls with the system trust store (pure Rust, no OpenSSL)
+# ---------------------------------------------------------------------------
+[target.'cfg(not(windows))'.dependencies]
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "rustls-tls",
+    "http2",
+    "charset",
+    "stream",
+] }
+rustls = { version = "0.23", default-features = false, features = [
+    "ring",
+    "std",
+    "tls12",
+    "logging",
+] }
+rustls-native-certs = "0.8"
+tokio-rustls = { version = "0.26", default-features = false, features = [
+    "ring",
+    "tls12",
+    "logging",
+] }
+
+[build-dependencies]
+slint-build = { version = "1.18", optional = true }
+
+[profile.release]
+opt-level = "s"
+lto = "thin"
+codegen-units = 16
+panic = "abort"
+strip = true
+
+[[example]]
+name = "v2_preview"
+required-features = ["gui"]

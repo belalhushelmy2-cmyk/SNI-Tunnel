@@ -1,0 +1,177 @@
+name: V2 build and release
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish v2.0.0 after successful builds
+        type: boolean
+        default: false
+permissions:
+  contents: read
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_BUILD_JOBS: '4'
+  RUST_MIN_STACK: '16777216'
+  RELEASE_TAG: v2.0.0
+
+jobs:
+  linux:
+    name: Linux tests, DEB and AppImage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Linux build and UI check dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config libfontconfig1-dev libxkbcommon-dev libx11-dev libgl1-mesa-dev python3-tk python3-venv xvfb fonts-dejavu-core
+      - name: Check formatting
+        run: rustfmt --edition 2021 --config skip_children=true --check src/migration.rs src/linux_tunnel.rs src/gui.rs src/engine.rs src/model.rs src/util.rs src/store.rs src/session.rs src/main.rs src/vmess.rs src/sysproxy_linux.rs src/autostart_linux.rs build.rs tests/migration_v2.rs examples/v2_preview.rs
+      - name: Clippy
+        run: cargo clippy --all-targets --locked
+      - name: Rust regression suite
+        run: cargo test --all --locked
+      - name: Python profile/editor/network regression suite
+        run: xvfb-run -a python3 -m unittest discover -s packaging/linux -p 'test_*.py'
+      - name: Native Slint first-click, layout and scrolling checks
+        run: |
+          cargo run --locked --example v2_preview -- 1
+          target/debug/examples/v2_preview 1.5
+      - name: Install pinned portable-build tools
+        run: |
+          python3 -m venv "$RUNNER_TEMP/sni-tools"
+          "$RUNNER_TEMP/sni-tools/bin/pip" install ziglang==0.17.0
+          "$RUNNER_TEMP/sni-tools/bin/python" -c 'import pathlib,ziglang; print(pathlib.Path(ziglang.__file__).parent)' >> "$GITHUB_PATH"
+          echo "$RUNNER_TEMP/sni-tools/bin" >> "$GITHUB_PATH"
+          cargo install cargo-zigbuild --version 0.24.0 --locked
+      - name: Build the glibc 2.30 GUI, helper and packages
+        run: ./packaging/linux/build-portable.sh
+      - name: Build and smoke-test AppImage
+        run: |
+          python3 packaging/linux/appimage.py
+          xvfb-run -a python3 packaging/linux/verify-appimage.py releases/v2/linux/SNI-Tunnel-V2-2.0.0-x86_64.AppImage
+      - name: Verify Debian payload without installing
+        run: |
+          dpkg-deb --info releases/v2/linux/sni-tunnel-v2_2.0.0_amd64.deb
+          dpkg-deb --extract releases/v2/linux/sni-tunnel-v2_2.0.0_amd64.deb target/deb-check
+          target/deb-check/usr/lib/sni-tunnel-v2/sni-tunnel --help
+          cmp target/deb-check/usr/lib/sni-tunnel-v2/sni-tunnel target/x86_64-unknown-linux-gnu/release/sni-tunnel
+      - name: Package complete source and release documentation
+        run: |
+          python3 packaging/release-source.py releases/v2/linux/SNI-Tunnel-V2-2.0.0-source.zip
+          cp TEST_RESULTS.md MIGRATION.md RELEASE_NOTES.md releases/v2/linux/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v2-linux-and-source
+          path: releases/v2/linux/*
+          if-no-files-found: error
+
+  windows:
+    name: Windows tests and x64 installer
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.99.1-x86_64-pc-windows-gnu
+      - name: Prepare pinned GNU resources and import libraries
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -Type Directory -Force target/ci-tools | Out-Null
+          $archive = Join-Path $PWD 'target/ci-tools/w64devkit.7z.exe'
+          Invoke-WebRequest 'https://github.com/skeeto/w64devkit/releases/download/v2.10.1/w64devkit-x64-2.10.1.7z.exe' -OutFile $archive
+          if ((Get-FileHash $archive).Hash.ToLower() -ne 'add1edf984ce4d473cfeb7c52e0ab38db73a855bba6c7f564d5e16648eb2896a') { throw 'GNU tool archive checksum mismatch' }
+          $seven = Join-Path $env:ProgramFiles '7-Zip/7z.exe'
+          & $seven x -y $archive '-otarget/ci-tools'
+          if ($LASTEXITCODE -ne 0) { throw 'GNU tool archive extraction failed' }
+          $kit = (Get-ChildItem target/ci-tools -Directory -Recurse | Where-Object { Test-Path (Join-Path $_.FullName 'bin/windres.exe') } | Select-Object -First 1).FullName
+          if (-not $kit) { throw 'GNU resource compiler missing' }
+          "$kit/bin" | Out-File $env:GITHUB_PATH -Encoding utf8 -Append
+          "WINDRES=$kit/bin/windres.exe" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          $sysroot = rustc --print sysroot
+          $libs = Join-Path $sysroot 'lib/rustlib/x86_64-pc-windows-gnu/lib/self-contained'
+          New-Item -Type Directory -Force $libs | Out-Null
+          Get-ChildItem "$kit/lib/lib*.a" | ForEach-Object { if (!(Test-Path (Join-Path $libs $_.Name))) { Copy-Item $_.FullName $libs } }
+          $nsis = Join-Path ${env:ProgramFiles(x86)} 'NSIS'
+          if (!(Test-Path (Join-Path $nsis 'makensis.exe'))) { choco install nsis -y --no-progress }
+          $nsis | Out-File $env:GITHUB_PATH -Encoding utf8 -Append
+      - uses: Swatinem/rust-cache@v2
+      - name: Rust Windows regression suite
+        run: cargo test --no-default-features --locked
+      - name: Build bundled installer
+        shell: pwsh
+        run: ./packaging/windows/build.ps1
+      - name: Verify executable and installer payload
+        shell: pwsh
+        run: |
+          & target/release/sni-tunnel.exe --help
+          if ($LASTEXITCODE -ne 0) { throw 'Windows executable startup failed' }
+          $seven = Join-Path $env:ProgramFiles '7-Zip/7z.exe'
+          & $seven x -y releases/v2/windows/SNI-Tunnel-V2-Setup-x64.exe '-otarget/installer-check'
+          if ($LASTEXITCODE -ne 0) { throw 'Installer extraction failed' }
+          if ((Get-FileHash target/release/sni-tunnel.exe).Hash -ne (Get-FileHash target/installer-check/sni-tunnel.exe).Hash) { throw 'Installer executable hash mismatch' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v2-windows
+          path: releases/v2/windows/SNI-Tunnel-V2-Setup-x64.exe
+          if-no-files-found: error
+
+  publish:
+    name: Publish requested latest release
+    needs: [linux, windows]
+    if: github.ref == 'refs/heads/main' && ((github.event_name == 'push' && contains(github.event.head_commit.message, '[publish-release]')) || (github.event_name == 'workflow_dispatch' && inputs.publish))
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Verify expected assets and produce SHA256SUMS
+        shell: python
+        run: |
+          from pathlib import Path
+          import hashlib
+          root = Path('release')
+          required = ['SNI-Tunnel-V2-Setup-x64.exe', 'SNI-Tunnel-V2-2.0.0-x86_64.AppImage', 'sni-tunnel-v2_2.0.0_amd64.deb', 'sni-tunnel-v2_2.0.0_amd64.tar.gz', 'SNI-Tunnel-V2-2.0.0-source.zip', 'TEST_RESULTS.md', 'MIGRATION.md', 'RELEASE_NOTES.md']
+          assert all((root/name).is_file() for name in required)
+          assert all((root/name).stat().st_size > 1000000 for name in required[:5])
+          (root/'SHA256SUMS').write_text(''.join(hashlib.sha256((root/name).read_bytes()).hexdigest()+'  '+name+'\n' for name in sorted(required)))
+      - name: Refuse to modify an existing published version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' > existing-release.txt 2>/dev/null; then
+            test "$(cat existing-release.txt)" = true || { echo 'Version already published; bump the version instead of overwriting.'; exit 1; }
+          fi
+      - name: Upload all assets to a draft first
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v2.0.0
+          target_commitish: ${{ github.sha }}
+          name: SNI Tunnel V2 2.0.0
+          body_path: release/RELEASE_NOTES.md
+          draft: true
+          prerelease: false
+          files: release/*
+          fail_on_unmatched_files: true
+      - name: Publish as Latest after successful uploads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest

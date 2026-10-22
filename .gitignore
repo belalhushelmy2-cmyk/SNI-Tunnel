@@ -1,0 +1,19 @@
+target/
+dist/
+*.part
+*.exe
+!installer/*.exe
+packaging/staging/
+
+/private/
+/releases/
+
+/target-windows/
+/work/
+
+__pycache__/
+*.pyc
+
+# Pinned third-party archives are restored by fetch-vendor.py.
+/packaging/vendor/*.zip
+/packaging/vendor/*.tar.gz

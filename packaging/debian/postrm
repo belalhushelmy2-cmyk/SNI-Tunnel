@@ -1,0 +1,9 @@
+#!/bin/sh
+# Post-remove: clean up the autostart entry (the runtime data is kept).
+set -e
+
+AUTOSTART_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/autostart"
+rm -f "$AUTOSTART_DIR/sni-tunnel.desktop" || true
+
+echo "sni-tunnel: removed the autostart entry (the configuration in ~/.local/share/sni-tunnel was kept)"
+exit 0

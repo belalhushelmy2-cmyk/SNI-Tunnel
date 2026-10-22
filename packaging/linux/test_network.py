@@ -1,0 +1,74 @@
+import base64
+from pathlib import Path
+import unittest
+from unittest.mock import patch
+import network
+
+
+class RecoveryTests(unittest.TestCase):
+    def state(self):
+        return {'routes': network.route_plan('192.0.2.20', 'eth0', '192.0.2.1'),
+                'device': True, 'children': [{'pid': 123, 'token': ['old', '1']}],
+                'resolv_backup': base64.b64encode(b'nameserver 192.0.2.53\n').decode()}
+
+    def test_restores_owned_dns_and_only_scoped_routes(self):
+        with patch.object(network, 'command') as cmd, patch.object(network, 'process_token', return_value=['different', '2']), \
+             patch.object(network.os, 'kill') as kill, patch.object(Path, 'read_bytes', return_value=network.DNS_BYTES), \
+             patch.object(Path, 'write_bytes') as write:
+            self.assertTrue(network.recover(self.state()))
+            kill.assert_not_called()
+            write.assert_called_once_with(b'nameserver 192.0.2.53\n')
+            routes = [x.args[0] for x in cmd.call_args_list if 'route' in x.args[0]]
+            self.assertEqual(len(routes), 5)
+            for route in routes:
+                self.assertIn('del', route)
+                self.assertIn(network.METRIC, route)
+                self.assertIn('99', route)
+            self.assertIn(unittest.mock.call(['ip', 'link', 'delete', network.DEVICE], check=False), cmd.call_args_list)
+
+    def test_preserves_external_dns_change_but_removes_interface(self):
+        with patch.object(network, 'command') as cmd, patch.object(network, 'process_token', return_value=None), \
+             patch.object(Path, 'read_bytes', return_value=b'nameserver 192.0.2.99\n'), \
+             patch.object(Path, 'write_bytes') as write:
+            self.assertFalse(network.recover(self.state()))
+            write.assert_not_called()
+            cmd.assert_any_call(['ip', 'link', 'delete', network.DEVICE], check=False)
+
+    def test_server_exclusion_precedes_capture_and_does_not_delete_default(self):
+        routes = network.route_plan('198.51.100.10', 'wlan0', '192.168.1.1')
+        self.assertEqual(routes[0][3], '198.51.100.10/32')
+        self.assertIn('wlan0', routes[0])
+        self.assertTrue(all('default' not in r and 'replace' not in r for r in routes))
+        self.assertEqual(sum('unreachable' in r for r in routes), 2)
+
+
+if __name__ == '__main__':
+    unittest.main()
+
+
+class SupervisionTests(unittest.TestCase):
+    def test_retries_are_bounded_and_exponential(self):
+        with patch.object(network, 'STOP') as stop, patch.object(network, 'backend', side_effect=network.RecoverableError('offline')) as backend, \
+             patch.object(network.threading, 'Thread'), patch.object(network, 'log'):
+            stop.is_set.return_value = False
+            stop.wait.return_value = False
+            with self.assertRaisesRegex(RuntimeError, '5 attempts'):
+                network.supervise(['same-profile'])
+            self.assertEqual(backend.call_count, 6)
+            self.assertEqual([c.args[0] for c in stop.wait.call_args_list], [3, 6, 12, 24, 48])
+            self.assertTrue(all(c.args == (['same-profile'],) for c in backend.call_args_list))
+
+    def test_manual_stop_interrupts_backoff(self):
+        with patch.object(network, 'STOP') as stop, patch.object(network, 'backend', side_effect=network.RecoverableError('offline')) as backend, \
+             patch.object(network.threading, 'Thread'), patch.object(network, 'log'):
+            stop.is_set.return_value = False
+            stop.wait.return_value = True
+            network.supervise([])
+            self.assertEqual(backend.call_count, 1)
+
+    def test_configuration_errors_are_not_retried(self):
+        with patch.object(network, 'STOP') as stop, patch.object(network, 'backend', side_effect=RuntimeError('invalid core config')) as backend, \
+             patch.object(network.threading, 'Thread'):
+            stop.is_set.return_value = False
+            with self.assertRaisesRegex(RuntimeError, 'invalid core config'): network.supervise([])
+            self.assertEqual(backend.call_count, 1)

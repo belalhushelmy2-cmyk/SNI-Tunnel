@@ -1,0 +1,1118 @@
+// SNI Tunnel - Stage 4 desktop UI.
+// A thin view: all state changes flow through callbacks handled in src/gui.rs.
+
+import { Palette as WidgetPalette } from "std-widgets.slint";
+
+import { Button, LineEdit, CheckBox, ListView, ComboBox, ScrollView, TextEdit } from "std-widgets.slint";
+
+export struct ServerRow {
+    name: string,
+    addr: string,
+    port: string,
+    transport: string,
+    sni: string,
+    status: string,
+    latency: string,
+    selected: bool,
+    source-index: int,
+}
+
+export struct SniRow {
+    name: string,
+    target: string,
+    sni: string,
+    host: string,
+    selected: bool,
+}
+
+export struct LogRow {
+    ts: string,
+    level: string,
+    text: string,
+}
+
+export struct TrafficPoint { up: float, down: float }
+
+export global Preferences {
+    in-out property <bool> reduced-motion: false;
+    in-out property <bool> compact-layout: false;
+}
+
+export global Theme {
+    out property <color> bg: #0d1119;
+    out property <color> panel: #151c27;
+    out property <color> panel-hi: #233548;
+    out property <color> text: #ecf2ff;
+    out property <color> muted: #9caec9;
+    out property <color> accent: #74c8c0;
+    out property <color> warn: #d29922;
+    out property <color> error: #f85149;
+}
+
+component RailItem inherits Rectangle {
+    in property <string> label;
+    in property <image> icon;
+    in property <bool> selected;
+    callback clicked();
+    height: 44px;
+    vertical-stretch: 0;
+    border-radius: 10px;
+    background: root.selected ? Theme.panel-hi : (hit.has-hover ? Theme.panel : transparent);
+    animate background { duration: Preferences.reduced-motion ? 0ms : 120ms; }
+    forward-focus: scope;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { hit.clicked(); }
+    Image {
+        x: 14px; y: (parent.height - self.height) / 2;
+        width: 20px; height: 20px; source: root.icon;
+        accessible-role: none;
+    }
+    Text {
+        x: 46px; y: 0px;
+        width: parent.width - self.x - 14px; height: parent.height;
+        text: root.label; color: root.selected ? Theme.text : Theme.muted;
+        font-size: 13px; vertical-alignment: center; overflow: elide;
+        accessible-role: none;
+    }
+    Rectangle {
+        x: parent.width - 7px; y: (parent.height - self.height) / 2;
+        width: 3px; height: 16px; border-radius: 1.5px;
+        background: root.selected ? Theme.accent : transparent;
+    }
+    hit := TouchArea { clicked => { scope.focus(); root.clicked(); } }
+    // A keyboard target must not intercept the pointer press before TouchArea.
+    scope := FocusScope {
+        width: 0px; height: 0px; focus-on-click: false;
+        key-pressed(event) => {
+            if event.text == " " || event.text == Key.Return { root.clicked(); return accept; }
+            return reject;
+        }
+    }
+    // Keep geometry identical whether the item is selected, hovered or focused.
+    border-width: 1px;
+    border-color: scope.has-focus ? Theme.accent : transparent;
+}
+
+component MetricCard inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <string> detail;
+    border-radius: 14px; background: Theme.panel; border-width: 1px; border-color: #243040;
+    VerticalLayout { padding: Preferences.compact-layout ? 12px : 18px; spacing: 8px;
+        Text { text: root.label; color: Theme.muted; font-size: 12px; }
+        Text { text: root.value; color: Theme.text; font-size: 25px; font-weight: 600; }
+        Text { text: root.detail; color: Theme.muted; font-size: 11px; }
+    }
+}
+
+export component AppWindow inherits Window {
+    init => { WidgetPalette.color-scheme = ColorScheme.dark; }
+    title: "SNI Tunnel V2";
+    preferred-width: 1180px;
+    preferred-height: 800px;
+    min-width: 800px;
+    min-height: 600px;
+    background: Theme.bg;
+    icon: @image-url("../assets/icon-256.png");
+
+    in-out property <int> tab: 0;
+    in-out property <string> diagnostics: "Refresh to inspect the last runtime configuration and run small HTTP probes.";
+    in-out property <string> reference-path: "";
+    pure callback matches(string, string) -> bool;
+    callback refresh-diagnostics();
+    callback compare-diagnostics(string);
+    callback export-diagnostics();
+
+    // ---- dashboard ----
+    in-out property <string> phase: "DISCONNECTED";
+    in-out property <string> detail: "idle";
+    in-out property <color> status-color: Theme.muted;
+    in-out property <string> external-ip: "-";
+    in-out property <string> up-speed: "0 B/s";
+    in-out property <string> down-speed: "0 B/s";
+    in-out property <string> up-total: "0 B";
+    in-out property <string> down-total: "0 B";
+    in-out property <string> active-conns: "0";
+    in-out property <string> uptime: "00:00";
+
+    // ---- servers ----
+    in-out property <[ServerRow]> servers: [];
+    in-out property <string> import-text: "";
+    in-out property <string> server-search: "";
+    in-out property <string> log-search: "";
+    in-out property <bool> connection-busy: false;
+    in-out property <bool> connection-live: false;
+    in-out property <bool> platform-windows: false;
+    in-out property <string> tunnel-mode: "Local proxy";
+    in-out property <string> latency: "Not measured";
+    in-out property <[TrafficPoint]> traffic: [];
+    in-out property <float> traffic-peak: 1;
+    in-out property <string> server-sort: "Name";
+    callback sort-changed();
+    in-out property <string> active-profile: "No active server";
+
+    // ---- reconnect prompt ----
+    in-out property <bool> reconnect-prompt: false;
+    in-out property <string> reconnect-text: "";
+
+    // ---- sni ----
+    in-out property <[SniRow]> snis: [];
+    in-out property <string> sni-name: "";
+    in-out property <string> sni-value: "";
+    in-out property <string> sni-ws-host: "";
+    in-out property <string> sni-ws-path: "";
+    in-out property <string> sni-connect-addr: "";
+    in-out property <string> sni-connect-port: "";
+    in-out property <bool> sni-no-tls: false;
+    in-out property <bool> sni-allow-insecure: false;
+
+    // ---- logs ----
+    in-out property <[LogRow]> logs: [];
+    /// What the log shows: "simple" or "advanced".
+    in-out property <string> log-mode: "simple";
+    /// Follow the newest entry.
+    in-out property <bool> log-auto-scroll: true;
+    /// The message of the last log action (copy, export, ...).
+    in-out property <string> log-status: "";
+    /// Where the log view is scrolled to.
+    in-out property <int> log-scroll-request: 0;
+
+    // ---- settings ----
+    in-out property <string> http-port: "2080";
+    in-out property <string> socks-port: "1080";
+    in-out property <bool> system-proxy: true;
+    in-out property <bool> tun-mode: false;
+    in-out property <bool> kill-switch: true;
+    in-out property <bool> netmod-compatibility: false;
+    in-out property <bool> auto-reconnect: false;
+    in-out property <bool> minimize-to-tray: true;
+    in-out property <bool> start-with-windows: false;
+    in-out property <bool> reduced-motion <=> Preferences.reduced-motion;
+    in-out property <bool> compact-layout <=> Preferences.compact-layout;
+    in-out property <string> custom-dns: "";
+    in-out property <string> log-level: "warning";
+    // The defaults for newly created server profiles.
+    in-out property <bool> default-mux-enabled: false;
+    in-out property <string> default-mux-concurrency: "8";
+    in-out property <bool> default-mux-xudp-enabled: false;
+
+    // ---- callbacks ----
+    callback connect_clicked();
+    callback disconnect_clicked();
+    callback test_clicked();
+    callback verify_full_tunnel_clicked();
+    callback refresh_ip_clicked();
+    callback import_clicked();
+    callback import_clipboard_clicked();
+    callback add_server_clicked();
+    callback use_server(int);
+    callback edit_server(int);
+    callback test_server(int);
+    callback duplicate_server(int);
+    callback export_server(int);
+    callback remove_server(int);
+    callback reconnect_now_clicked();
+    callback reconnect_later_clicked();
+    callback add_sni_clicked();
+    callback use_sni(int);
+    callback off_sni_clicked();
+    callback remove_sni(int);
+    callback save_settings_clicked();
+    callback clear_logs_clicked();
+    callback copy_logs_clicked();
+    callback export_logs_clicked();
+    callback hide_to_tray_clicked();
+
+    HorizontalLayout {
+        spacing: 0px;
+        Rectangle {
+            width: 176px; background: #101620;
+            VerticalLayout { padding: 16px; spacing: 6px;
+                HorizontalLayout { spacing: 10px; padding-top: 12px; padding-bottom: 25px;
+                    Image { source: @image-url("../assets/icon-64.png"); width: 30px; height: 30px; }
+                    VerticalLayout { spacing: 2px;
+                        Text { text: "SNI TUNNEL"; color: Theme.text; font-size: 13px; font-weight: 700; }
+                        Text { text: "V2  /  PREMIUM"; color: Theme.accent; font-size: 9px; letter-spacing: 1px; }
+                    }
+                }
+                RailItem { label: "Overview"; icon: @image-url("../assets/v2/overview.svg"); selected: root.tab == 0; clicked => { root.tab = 0; } }
+                RailItem { label: "Servers"; icon: @image-url("../assets/v2/servers.svg"); selected: root.tab == 1; clicked => { root.tab = 1; } }
+                RailItem { label: "SNI profiles"; icon: @image-url("../assets/v2/sni.svg"); selected: root.tab == 2; clicked => { root.tab = 2; } }
+                RailItem { label: "Activity"; icon: @image-url("../assets/v2/logs.svg"); selected: root.tab == 3; clicked => { root.tab = 3; } }
+                RailItem { label: "Settings"; icon: @image-url("../assets/v2/settings.svg"); selected: root.tab == 4; clicked => { root.tab = 4; } }
+                RailItem { label: "Diagnostics"; icon: @image-url("../assets/v2/diagnostics.svg"); selected: root.tab == 5; clicked => { root.tab = 5; } }
+                Rectangle { vertical-stretch: 1; }
+                Rectangle { height: 1px; background: #263040; }
+                Text { text: "Rust · Slint · Xray"; color: Theme.muted; font-size: 10px; horizontal-alignment: center; height: 32px; }
+            }
+        }
+        VerticalLayout {
+            padding: Preferences.compact-layout ? 16px : 24px;
+            spacing: 18px;
+            HorizontalLayout { spacing: 12px; vertical-stretch: 0;
+                VerticalLayout { spacing: 5px;
+                    Text { text: root.tab == 0 ? "Connection overview" : root.tab == 1 ? "Your servers" : root.tab == 2 ? "SNI profiles" : root.tab == 3 ? "Connection activity" : root.tab == 4 ? "Preferences" : "Diagnostics"; color: Theme.text; font-size: 24px; font-weight: 600; }
+                    Text { text: "Your connection. Your configuration."; color: Theme.muted; font-size: 12px; }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                Rectangle { width: 140px; height: 30px; border-radius: 15px; background: #1d2935;
+                    Text { text: root.phase; color: root.status-color; font-size: 10px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                }
+            }
+        if root.tab == 0: ScrollView {
+            min-height: 0px;
+            content-width: self.width - 16px;
+            content-height: dashboard-content.preferred-height;
+            dashboard-content := VerticalLayout {
+            spacing: 16px;
+            Rectangle {
+                min-height: 190px; border-radius: 18px;
+                background: @linear-gradient(90deg, #1b3035 0%, #172130 100%);
+                border-width: 1px; border-color: #34504f;
+                HorizontalLayout { padding: 26px; spacing: 22px;
+                    VerticalLayout { spacing: 10px; horizontal-stretch: 1;
+                        Text { text: root.connection-live ? "CONNECTION VERIFIED" : root.connection-busy ? "ESTABLISHING YOUR CONNECTION" : "READY WHEN YOU ARE"; color: Theme.accent; font-size: 10px; font-weight: 700; }
+                        Text { text: root.connection-live ? "You're connected." : root.connection-busy ? "Connecting securely…" : "A clearer connection."; color: Theme.text; font-size: 30px; font-weight: 600; wrap: word-wrap; }
+                        Text { text: root.detail; color: #b7c8d3; font-size: 12px; wrap: word-wrap; }
+                        Text { text: root.tunnel-mode + "   ·   " + root.latency; color: Theme.muted; font-size: 11px; }
+                    }
+                    VerticalLayout { spacing: 10px; alignment: center;
+                        Button { text: root.connection-live || root.connection-busy ? "Disconnect" : "Connect"; min-width: 150px; height: 48px;
+                            clicked => { if root.connection-live || root.connection-busy { root.disconnect_clicked(); } else { root.connect_clicked(); } }
+                        }
+                        Text { text: root.connection-live ? "Traffic forwarding verified" : "Verification before success"; color: Theme.muted; font-size: 10px; horizontal-alignment: center; }
+                    }
+                }
+            }
+            Rectangle { background: Theme.panel; border-radius: 14px; min-height: 76px; vertical-stretch: 0;
+                HorizontalLayout { padding: 18px; spacing: 14px;
+                    Image { source: @image-url("../assets/v2/servers.svg"); width: 22px; height: 22px; }
+                    VerticalLayout { horizontal-stretch: 1; spacing: 6px;
+                        Text { text: root.active-profile; color: Theme.text; font-size: 13px; wrap: word-wrap; }
+                        Text { text: "Public IP   " + root.external-ip; color: Theme.muted; font-size: 11px; }
+                    }
+                    Button { text: "Switch server"; clicked => { root.tab = 1; } }
+                }
+            }
+            HorizontalLayout { spacing: 12px;
+                MetricCard { label: "DOWNLOAD"; value: root.down-speed; detail: root.down-total + " received"; }
+                MetricCard { label: "UPLOAD"; value: root.up-speed; detail: root.up-total + " sent"; }
+                MetricCard { label: "SESSION"; value: root.uptime; detail: "Session duration"; }
+            }
+            Rectangle { background: Theme.panel; border-radius: 14px; min-height: 150px; vertical-stretch: 1;
+                VerticalLayout { padding: 18px; spacing: 12px;
+                    HorizontalLayout {
+                        Text { text: "Traffic history"; color: Theme.text; font-size: 13px; font-weight: 600; }
+                        Rectangle { horizontal-stretch: 1; }
+                        Text { text: "↓ download   ↑ upload  ·  last 60 samples"; color: Theme.muted; font-size: 10px; }
+                    }
+                    HorizontalLayout { spacing: 2px;
+                        for sample in root.traffic: Rectangle {
+                            horizontal-stretch: 1; background: transparent;
+                            Rectangle { x: 0px; y: parent.height - self.height; width: parent.width / 2; height: max(0px, parent.height * sample.down / root.traffic-peak); background: Theme.accent; border-radius: 2px; }
+                            Rectangle { x: parent.width / 2; y: parent.height - self.height; width: parent.width / 2; height: max(0px, parent.height * sample.up / root.traffic-peak); background: #6998d3; border-radius: 2px; }
+                        }
+                        if root.traffic.length == 0: Text { text: "Measured traffic appears after you connect"; color: Theme.muted; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; }
+                    }
+                }
+            }
+            HorizontalLayout { spacing: 8px; vertical-stretch: 0;
+                Button { text: "Test connection"; clicked => { root.test_clicked(); } }
+                Button { text: "Verify full tunnel"; clicked => { root.verify_full_tunnel_clicked(); } }
+                Button { text: "Refresh IP"; clicked => { root.refresh_ip_clicked(); } }
+                Button { text: "Minimize"; clicked => { root.hide_to_tray_clicked(); } }
+                Rectangle { horizontal-stretch: 1; }
+            }
+            }
+        }
+
+        // ---------- servers ----------
+        if root.tab == 1: VerticalLayout {
+            spacing: 6px;
+            HorizontalLayout {
+                spacing: 6px;
+                Button { text: "+ Add server"; height: 30px; clicked => { root.add_server_clicked(); } }
+                Button { text: "Import from clipboard"; height: 30px; clicked => { root.import_clipboard_clicked(); } }
+                Rectangle { horizontal-stretch: 1; }
+            }
+            HorizontalLayout {
+                spacing: 6px;
+                LineEdit {
+                    text <=> root.import-text;
+                    placeholder-text: "vmess:// ... or JSON config";
+                    horizontal-stretch: 1;
+                }
+                Button { text: "Import"; height: 30px; clicked => { root.import_clicked(); } }
+            }
+            HorizontalLayout { spacing: 10px;
+                LineEdit { text <=> root.server-search; placeholder-text: "Search servers, address or SNI"; horizontal-stretch: 1; }
+                ComboBox { model: ["Name", "Latency"]; current-value <=> root.server-sort; selected(value) => { root.server-sort = value; root.sort-changed(); } width: 120px; }
+            }
+            if root.servers.length == 0: Text { text: "Your servers belong here. Add a profile or import a VMess link to begin."; color: Theme.muted; wrap: word-wrap; font-size: 14px; }
+            ListView {
+                for row[i] in root.servers: Rectangle {
+                    visible: root.server-search == "" || root.matches(row.name, root.server-search) || root.matches(row.addr, root.server-search) || root.matches(row.sni, root.server-search);
+                    height: self.visible ? (Preferences.compact-layout ? 72px : 88px) : 0px;
+                    border-radius: 10px;
+                    background: row.selected ? Theme.panel-hi : Theme.panel;
+                    TouchArea {
+                        clicked => { root.use_server(row.source-index); }
+                        double-clicked => { root.edit_server(row.source-index); }
+                    }
+                    HorizontalLayout {
+                        padding: 8px;
+                        spacing: 8px;
+                        VerticalLayout {
+                            spacing: 2px;
+                            horizontal-stretch: 1;
+                            Text { text: row.name; overflow: elide; color: Theme.text; font-size: 14px; }
+                            Text { text: row.addr + ":" + row.port + "   " + row.transport; overflow: elide; color: Theme.muted; font-size: 12px; }
+                            Text { text: row.sni + "   " + row.status + "   " + row.latency; overflow: elide; color: Theme.muted; font-size: 12px; }
+                        }
+                        Button { text: "Use"; height: 26px; min-width: 46px; clicked => { root.use_server(row.source-index); } }
+                        Button { text: "Edit"; height: 26px; min-width: 46px; clicked => { root.edit_server(row.source-index); } }
+                        Button { text: "Test"; height: 26px; min-width: 46px; clicked => { root.test_server(row.source-index); } }
+                        Button { text: "Duplicate"; height: 26px; min-width: 54px; clicked => { root.duplicate_server(row.source-index); } }
+                        Button { text: "Export"; height: 26px; min-width: 54px; clicked => { root.export_server(row.source-index); } }
+                        Button { text: "Delete"; height: 26px; min-width: 54px; clicked => { root.remove_server(row.source-index); } }
+                    }
+                }
+            }
+        }
+
+        // ---------- sni ----------
+        if root.tab == 2: VerticalLayout {
+            spacing: 8px;
+            ListView {
+                for row[i] in root.snis: Rectangle {
+                    height: 60px;
+                    border-radius: 10px;
+                    background: row.selected ? Theme.panel-hi : Theme.panel;
+                    HorizontalLayout {
+                        padding: 8px;
+                        spacing: 8px;
+                        VerticalLayout {
+                            spacing: 2px;
+                            horizontal-stretch: 1;
+                            Text { text: row.name; overflow: elide; color: Theme.text; font-size: 14px; }
+                            Text { text: "server " + row.target + "   sni " + row.sni; overflow: elide; color: Theme.muted; font-size: 12px; }
+                            Text { text: "host " + row.host; overflow: elide; color: Theme.muted; font-size: 12px; }
+                        }
+                        Button { text: "Use"; clicked => { root.use_sni(i); } }
+                        Button { text: "Remove"; clicked => { root.remove_sni(i); } }
+                    }
+                }
+            }
+            Rectangle {
+                background: Theme.panel;
+                border-radius: 12px;
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 6px;
+                    HorizontalLayout {
+                        spacing: 6px;
+                        Text { text: "New SNI profile"; color: Theme.text; font-size: 14px; vertical-alignment: center; }
+                        Rectangle { horizontal-stretch: 1; }
+                        Button { text: "Disable override"; clicked => { root.off_sni_clicked(); } }
+                    }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        LineEdit { text <=> root.sni-name; placeholder-text: "name"; horizontal-stretch: 1; }
+                        LineEdit { text <=> root.sni-value; placeholder-text: "SNI e.g. cdn.example.com"; horizontal-stretch: 2; }
+                    }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        LineEdit { text <=> root.sni-ws-host; placeholder-text: "WS Host (optional)"; horizontal-stretch: 1; }
+                        LineEdit { text <=> root.sni-ws-path; placeholder-text: "WS Path (optional)"; horizontal-stretch: 1; }
+                    }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        LineEdit { text <=> root.sni-connect-addr; placeholder-text: "dial address (optional)"; horizontal-stretch: 1; }
+                        LineEdit { text <=> root.sni-connect-port; placeholder-text: "dial port"; horizontal-stretch: 1; }
+                    }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        CheckBox { text: "no TLS"; checked <=> root.sni-no-tls; }
+                        CheckBox { text: "Allow insecure (skip identity verification)"; checked <=> root.sni-allow-insecure; }
+                        Rectangle { horizontal-stretch: 1; }
+                        Button { text: "Add profile"; clicked => { root.add_sni_clicked(); } }
+                    }
+                }
+            }
+        }
+
+        // ---------- logs ----------
+        if root.tab == 3: VerticalLayout {
+            spacing: 8px;
+            HorizontalLayout {
+                spacing: 6px;
+                Text { text: "Log"; color: Theme.text; font-size: 14px; vertical-alignment: center; }
+                Rectangle { horizontal-stretch: 1; }
+                Text { text: "Mode"; color: Theme.muted; vertical-alignment: center; }
+                ComboBox {
+                    model: ["simple", "advanced"];
+                    current-value <=> root.log-mode;
+                    width: 110px;
+                }
+                CheckBox { text: "Auto scroll"; checked <=> root.log-auto-scroll; }
+                Button { text: "Copy"; clicked => { root.copy_logs_clicked(); } }
+                Button { text: "Export"; clicked => { root.export_logs_clicked(); } }
+                Button { text: "Clear"; clicked => { root.clear_logs_clicked(); } }
+            }
+            Text { text: "Times: UTC. Advanced core logging requires reconnecting. " + root.log-status; color: Theme.muted; font-size: 11px; }
+            LineEdit { text <=> root.log-search; placeholder-text: "Search log messages"; }
+            log-view := ScrollView {
+                property <int> scroll-request: root.log-scroll-request;
+                changed scroll-request => {
+                    if root.log-auto-scroll { self.content-y = min(0px, self.height - self.content-height - 16px); }
+                }
+                changed content-height => {
+                    if root.log-auto-scroll { self.content-y = min(0px, self.height - self.content-height - 16px); }
+                }
+                changed height => {
+                    if root.log-auto-scroll { self.content-y = min(0px, self.height - self.content-height - 16px); }
+                }
+                content-width: parent.width;
+                content-height: log-lines.preferred-height;
+                log-lines := VerticalLayout {
+                    spacing: 2px;
+                    for row in root.logs: Text {
+                        visible: root.log-search == "" || root.matches(row.text, root.log-search);
+                        height: self.visible ? self.preferred-height : 0px;
+                        wrap: word-wrap;
+                        text: "[" + row.ts + "] " + row.level + " " + row.text;
+                        color: row.level == "ERROR" ? Theme.error : (row.level == "WARN" ? Theme.warn : (row.level == "EVENT" ? Theme.accent : Theme.muted));
+                        font-size: 12px;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // ---------- settings ----------
+        if root.tab == 5: VerticalLayout {
+            Text { text: "Connection Diagnostics"; font-size: 18px; }
+            HorizontalLayout {
+                Button { text: "Refresh / Test"; clicked => { root.refresh-diagnostics(); } }
+                Button { text: "Export report"; clicked => { root.export-diagnostics(); } }
+            }
+            HorizontalLayout {
+                LineEdit { text <=> root.reference-path; placeholder-text: "Path to NetMod/Nekoray effective Xray JSON"; }
+                Button { text: "Compare"; clicked => { root.compare-diagnostics(root.reference-path); } }
+            }
+            TextEdit { text: root.diagnostics; read-only: true; }
+        }
+
+        if root.tab == 4: VerticalLayout {
+            spacing: 10px;
+            Text { text: "Connection & networking"; color: Theme.text; font-size: 22px; font-weight: 700; }
+            Text { text: "Connection, recovery and defaults for new profiles"; color: Theme.muted; font-size: 12px; }
+            ScrollView {
+                vertical-stretch: 1;
+                min-height: 0px;
+                content-width: self.width - 16px;
+                content-height: settings-form.preferred-height;
+                settings-form := VerticalLayout {
+                    spacing: 10px;
+            HorizontalLayout {
+                spacing: 8px;
+                Text { text: "HTTP proxy port"; color: Theme.text; width: 160px; vertical-alignment: center; }
+                LineEdit { text <=> root.http-port; width: 120px; }
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                Text { text: "SOCKS proxy port"; color: Theme.text; width: 160px; vertical-alignment: center; }
+                LineEdit { text <=> root.socks-port; width: 120px; }
+            }
+            CheckBox { text: "Manage desktop system proxy while connected"; checked <=> root.system-proxy; }
+            CheckBox { text: "TUN mode · route the whole device (requires permission)"; checked <=> root.tun-mode; }
+            CheckBox { text: "NetMod TAP compatibility test (disconnect NetMod first)"; checked <=> root.netmod-compatibility; enabled: root.platform-windows; }
+            CheckBox { text: root.platform-windows ? "Kill switch: block traffic when the tunnel is down" : "Kill switch · Windows TUN only"; checked <=> root.kill-switch; enabled: root.platform-windows; }
+            CheckBox { text: "Auto-reconnect if the core dies or traffic fails"; checked <=> root.auto-reconnect; }
+            CheckBox { text: "Minimize to tray when the window is closed"; checked <=> root.minimize-to-tray; enabled: root.platform-windows; }
+            CheckBox { text: "Start with your desktop session"; checked <=> root.start-with-windows; }
+            HorizontalLayout {
+                spacing: 8px;
+                Text { text: "Log level"; color: Theme.text; width: 160px; vertical-alignment: center; }
+                LineEdit { text <=> root.log-level; width: 120px; }
+            }
+            Text { text: "APPEARANCE"; color: Theme.accent; font-size: 11px; font-weight: 700; }
+            CheckBox { text: "Reduce motion"; checked <=> root.reduced-motion; }
+            CheckBox { text: "Compact spacing"; checked <=> root.compact-layout; }
+            Text { text: "DNS"; color: Theme.accent; font-size: 11px; font-weight: 700; }
+            LineEdit { text <=> root.custom-dns; placeholder-text: "Fallback DNS · e.g. 1.1.1.1, 8.8.8.8"; }
+            Text { text: "Per-server DNS takes precedence. Changes apply on your next connection."; color: Theme.muted; font-size: 11px; wrap: word-wrap; }
+            Text { text: "PRIVACY & SECURITY"; color: Theme.accent; font-size: 11px; font-weight: 700; }
+            Text { text: "Credentials stay in your user data directory. Connection logs redact authentication secrets."; color: Theme.muted; font-size: 11px; wrap: word-wrap; }
+            // ---------- networking: the defaults for new servers ----------
+            Rectangle {
+                background: Theme.panel; border-radius: 12px;
+                VerticalLayout {
+                    padding: 10px; spacing: 5px;
+                    Text { text: "NETWORKING - DEFAULTS FOR NEW SERVERS"; color: Theme.accent; font-size: 11px; font-weight: 700; }
+                    Text {
+                        text: "These values are used when a new server profile is created. A profile that already exists keeps its own settings.";
+                        color: Theme.muted; font-size: 10px;
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        CheckBox { text: "Enable MUX by default"; checked <=> root.default-mux-enabled; }
+                        Text { text: "Concurrency"; color: Theme.muted; vertical-alignment: center; }
+                        LineEdit { text <=> root.default-mux-concurrency; width: 80px; enabled: root.default-mux-enabled; }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        CheckBox { text: "Enable XUDP by default"; checked <=> root.default-mux-xudp-enabled; enabled: root.default-mux-enabled; }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+                }
+            }
+                }
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                Button { text: "Save settings"; clicked => { root.save_settings_clicked(); } }
+                Rectangle { horizontal-stretch: 1; }
+            }
+        }
+    }
+
+    }
+
+    // ---------- reconnect prompt ----------
+    if root.reconnect-prompt: Rectangle {
+        background: Theme.panel-hi;
+        border-radius: 10px;
+        height: 44px;
+        HorizontalLayout {
+            padding: 8px;
+            spacing: 8px;
+            Text { text: root.reconnect-text; color: Theme.text; font-size: 13px; vertical-alignment: center; horizontal-stretch: 1; }
+            Button { text: "Reconnect now"; height: 26px; clicked => { root.reconnect_now_clicked(); } }
+            Button { text: "Later"; height: 26px; clicked => { root.reconnect_later_clicked(); } }
+        }
+    }
+}
+
+// ===========================================================================
+// Server configuration editor
+// ===========================================================================
+
+export component ServerEditor inherits Window {
+    init => { WidgetPalette.color-scheme = ColorScheme.dark; }
+    title: "Server configuration";
+    preferred-width: 740px;
+    preferred-height: 760px;
+    min-width: 660px;
+    min-height: 360px;
+    background: Theme.bg;
+    icon: @image-url("../assets/icon-256.png");
+
+    in-out property <string> ed-id: "";
+    in-out property <string> ed-name: "";
+    in-out property <string> ed-protocol: "vmess";
+    in-out property <string> ed-address: "";
+    in-out property <string> ed-port: "443";
+    in-out property <string> ed-uuid: "";
+    in-out property <string> ed-alter-id: "0";
+    in-out property <string> ed-security: "auto";
+    in-out property <string> ed-network: "tcp";
+    in-out property <bool> ed-tls: true;
+    in-out property <string> ed-sni: "";
+    in-out property <string> ed-alpn: "";
+    in-out property <string> ed-fingerprint: "";
+    in-out property <bool> ed-allow-insecure: false;
+    in-out property <string> ed-cert-pin: "";
+    in-out property <string> ed-ws-host: "";
+    in-out property <string> ed-ws-path: "/";
+    in-out property <string> ed-ws-headers: "";
+    in-out property <string> ed-grpc-service: "";
+    in-out property <bool> ed-grpc-multi: false;
+    in-out property <string> ed-h2-host: "";
+    in-out property <string> ed-h2-path: "/";
+    in-out property <string> ed-xhttp-mode: "";
+    in-out property <string> ed-tcp-header: "none";
+    in-out property <string> ed-kcp-seed: "";
+    in-out property <string> ed-kcp-header: "";
+    in-out property <string> ed-quic-security: "";
+    in-out property <string> ed-quic-header: "";
+    in-out property <string> ed-dns: "";
+    in-out property <bool> ed-mux: false;
+    in-out property <string> ed-mux-concurrency: "8";
+    in-out property <bool> ed-mux-xudp: false;
+    in-out property <string> ed-mux-xudp-concurrency: "16";
+    in-out property <string> ed-mux-udp443: "reject";
+    /// Does the installed Xray-core know the XUDP fields?
+    in-out property <bool> ed-xudp-supported: false;
+    in-out property <string> ed-timeout: "10";
+    in-out property <string> ed-http-port: "";
+    in-out property <string> ed-socks-port: "";
+    in-out property <string> ed-remark: "";
+    in-out property <bool> ed-advanced: false;
+    in-out property <string> ed-status: "";
+    in-out property <bool> ed-confirm-close: false;
+    in-out property <bool> ed-show-secret: false;
+    pure callback validate-fields(string,string,string,string) -> string;
+    callback discard_clicked();
+    callback keep_editing_clicked();
+
+    // ---- the sections can be folded away ----
+    in-out property <bool> sec-general: true;
+    in-out property <bool> sec-transport: true;
+    in-out property <bool> sec-tls: true;
+    in-out property <bool> sec-ws: true;
+    in-out property <bool> sec-mux: true;
+    in-out property <bool> sec-advanced: false;
+
+    callback save_clicked();
+    callback cancel_clicked();
+    callback test_clicked();
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 8px;
+
+        // ---------- header ----------
+        HorizontalLayout {
+            spacing: 8px;
+            Text { text: "Server configuration"; color: Theme.text; font-size: 16px; font-weight: 700; vertical-alignment: center; }
+            Rectangle { horizontal-stretch: 1; }
+
+        }
+
+        // ---------- the form (scrollable) ----------
+        FocusScope {
+            vertical-stretch: 1;
+            min-height: 0px;
+            key-pressed(event) => {
+                if event.text == Key.PageDown {
+                    editor-scroll.content-y = max(min(0px, editor-scroll.height - editor-scroll.content-height), editor-scroll.content-y - editor-scroll.height * 0.8);
+                    return accept;
+                }
+                if event.text == Key.PageUp {
+                    editor-scroll.content-y = min(0px, editor-scroll.content-y + editor-scroll.height * 0.8);
+                    return accept;
+                }
+                return reject;
+            }
+        editor-scroll := ScrollView {
+            vertical-stretch: 1;
+            min-height: 0px;
+            content-width: self.width - 16px;
+            content-height: editor-form.preferred-height;
+            editor-form := VerticalLayout {
+                spacing: 12px;
+
+        // ---------- general ----------
+        Rectangle {
+            background: Theme.panel; border-radius: 12px;
+            vertical-stretch: 0;
+            VerticalLayout {
+                padding: 10px; spacing: 5px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    TouchArea {
+                        width: 240px; height: 20px;
+                        clicked => { root.sec-general = !root.sec-general; }
+                        Text {
+                            text: root.sec-general ? "−  GENERAL / AUTHENTICATION" : "+  GENERAL / AUTHENTICATION";
+                            color: Theme.accent; font-size: 11px; font-weight: 700; vertical-alignment: center;
+                            width: 240px;
+                            horizontal-alignment: left;
+                        }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+                if root.sec-general: VerticalLayout {
+                spacing: 5px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "Profile name"; color: Theme.muted; width: 120px; vertical-alignment: center; }
+                    LineEdit { text <=> root.ed-name; horizontal-stretch: 1; }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "Protocol"; color: Theme.muted; width: 120px; vertical-alignment: center; }
+                    ComboBox {
+                        model: ["vmess", "vless", "trojan"];
+                        current-value <=> root.ed-protocol;
+                        selected(value) => { root.ed-protocol = value; }
+                        width: 150px;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "UUID / password"; color: Theme.muted; width: 120px; vertical-alignment: center; }
+                    LineEdit { text <=> root.ed-uuid; input-type: root.ed-show-secret ? text : password; horizontal-stretch: 1; }
+                    CheckBox { text: "Show"; checked <=> root.ed-show-secret; }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "Server address"; color: Theme.muted; width: 120px; vertical-alignment: center; }
+                    LineEdit { text <=> root.ed-address; horizontal-stretch: 1; }
+                    Text { text: "Port"; color: Theme.muted; vertical-alignment: center; }
+                    LineEdit { text <=> root.ed-port; width: 80px; }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "Alter ID"; color: Theme.muted; width: 120px; vertical-alignment: center; }
+                    LineEdit { text <=> root.ed-alter-id; width: 80px; }
+                    Text { text: "Encryption"; color: Theme.muted; vertical-alignment: center; }
+                    ComboBox {
+                        model: ["auto", "aes-128-gcm", "chacha20-poly1305", "none", "zero"];
+                        current-value <=> root.ed-security;
+                        selected(value) => { root.ed-security = value; }
+                        width: 170px;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "Remarks"; color: Theme.muted; width: 120px; vertical-alignment: center; }
+                    LineEdit { text <=> root.ed-remark; horizontal-stretch: 1; }
+                }
+                }
+            }
+        }
+
+        // ---------- transport ----------
+        Rectangle {
+            background: Theme.panel; border-radius: 12px;
+            vertical-stretch: 0;
+            VerticalLayout {
+                padding: 10px; spacing: 5px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    TouchArea {
+                        width: 240px; height: 20px;
+                        clicked => { root.sec-transport = !root.sec-transport; }
+                        Text {
+                            text: root.sec-transport ? "[-] TRANSPORT" : "[+] TRANSPORT";
+                            color: Theme.accent; font-size: 11px; font-weight: 700; vertical-alignment: center;
+                            width: 240px;
+                            horizontal-alignment: left;
+                        }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+                if root.sec-transport: VerticalLayout {
+                spacing: 5px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "Type"; color: Theme.muted; width: 120px; vertical-alignment: center; }
+                    ComboBox {
+                        model: ["tcp", "ws", "h2", "grpc", "httpupgrade", "xhttp", "quic", "kcp"];
+                        current-value <=> root.ed-network;
+                        selected(value) => { root.ed-network = value; }
+                        width: 170px;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+                if root.ed-network == "xhttp": HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "XHTTP mode"; color: Theme.muted; width: 120px; vertical-alignment: center; }
+                    LineEdit { text <=> root.ed-xhttp-mode; placeholder-text: "auto / stream-one / packet-up"; horizontal-stretch: 1; }
+                }
+                // HTTP/2
+                if root.ed-network == "h2": VerticalLayout {
+                    spacing: 5px;
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "HTTP host"; color: Theme.muted; width: 120px; vertical-alignment: center; }
+                        LineEdit { text <=> root.ed-h2-host; horizontal-stretch: 1; }
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "HTTP path"; color: Theme.muted; width: 120px; vertical-alignment: center; }
+                        LineEdit { text <=> root.ed-h2-path; horizontal-stretch: 1; }
+                    }
+                }
+                // gRPC
+                if root.ed-network == "grpc": HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "Service name"; color: Theme.muted; width: 120px; vertical-alignment: center; }
+                    LineEdit { text <=> root.ed-grpc-service; horizontal-stretch: 1; }
+                    CheckBox { text: "multi-mode"; checked <=> root.ed-grpc-multi; }
+                }
+                // TCP
+                if root.ed-network == "tcp": HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "TCP header"; color: Theme.muted; width: 120px; vertical-alignment: center; }
+                    ComboBox {
+                        model: ["none", "http"];
+                        current-value <=> root.ed-tcp-header;
+                        selected(value) => { root.ed-tcp-header = value; }
+                        width: 140px;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+                // QUIC
+                if root.ed-network == "quic": HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "QUIC security"; color: Theme.muted; width: 120px; vertical-alignment: center; }
+                    ComboBox {
+                        model: ["none", "aes-128-gcm", "chacha20-poly1305"];
+                        current-value <=> root.ed-quic-security;
+                        selected(value) => { root.ed-quic-security = value; }
+                        width: 170px;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+                // KCP
+                if root.ed-network == "kcp": HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "KCP seed"; color: Theme.muted; width: 120px; vertical-alignment: center; }
+                    LineEdit { text <=> root.ed-kcp-seed; horizontal-stretch: 1; }
+                    ComboBox {
+                        model: ["none", "srtp", "utp", "wechat-video", "dtls", "wireguard"];
+                        current-value <=> root.ed-kcp-header;
+                        selected(value) => { root.ed-kcp-header = value; }
+                        width: 160px;
+                    }
+                }
+                }
+            }
+        }
+
+        // ---------- websocket ----------
+        if root.ed-network == "ws" || root.ed-network == "httpupgrade" || root.ed-network == "xhttp": Rectangle {
+            background: Theme.panel; border-radius: 12px;
+            vertical-stretch: 0;
+            VerticalLayout {
+                padding: 10px; spacing: 5px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    TouchArea {
+                        width: 240px; height: 20px;
+                        clicked => { root.sec-ws = !root.sec-ws; }
+                        Text {
+                            text: root.sec-ws ? "[-] WEBSOCKET" : "[+] WEBSOCKET";
+                            color: Theme.accent; font-size: 11px; font-weight: 700; vertical-alignment: center;
+                            width: 240px;
+                            horizontal-alignment: left;
+                        }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+                if root.sec-ws: VerticalLayout {
+                spacing: 5px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "Host header"; color: Theme.muted; width: 120px; vertical-alignment: center; }
+                    LineEdit { text <=> root.ed-ws-host; horizontal-stretch: 1; }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "Path"; color: Theme.muted; width: 120px; vertical-alignment: center; }
+                    LineEdit { text <=> root.ed-ws-path; horizontal-stretch: 1; }
+                }
+                if root.ed-network == "ws": HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "Extra headers"; color: Theme.muted; width: 120px; vertical-alignment: center; }
+                    LineEdit { text <=> root.ed-ws-headers; placeholder-text: "key: value (one per line)"; horizontal-stretch: 1; }
+                }
+                Text {
+                    text: "The Host header and the TLS SNI are separate: the Host header is sent with the request, the SNI is what the TLS handshake uses.";
+                    color: Theme.muted; font-size: 10px;
+                }
+                }
+            }
+        }
+
+        // ---------- TLS ----------
+        Rectangle {
+            background: Theme.panel; border-radius: 12px;
+            vertical-stretch: 0;
+            VerticalLayout {
+                padding: 10px; spacing: 5px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    TouchArea {
+                        width: 240px; height: 20px;
+                        clicked => { root.sec-tls = !root.sec-tls; }
+                        Text {
+                            text: root.sec-tls ? "[-] TLS / SNI" : "[+] TLS / SNI";
+                            color: Theme.accent; font-size: 11px; font-weight: 700; vertical-alignment: center;
+                            width: 240px;
+                            horizontal-alignment: left;
+                        }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+                if root.sec-tls: VerticalLayout {
+                spacing: 5px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    CheckBox { text: "Enable TLS"; checked <=> root.ed-tls; }
+                    CheckBox { text: "Allow insecure (skip identity verification)"; checked <=> root.ed-allow-insecure; }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "SNI / server name"; color: Theme.muted; width: 120px; vertical-alignment: center; }
+                    LineEdit { text <=> root.ed-sni; placeholder-text: "e.g. ea.com"; horizontal-stretch: 1; }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "Certificate SHA-256"; color: Theme.muted; width: 120px; vertical-alignment: center; }
+                    LineEdit { text <=> root.ed-cert-pin; placeholder-text: "Optional: pin verified with your server administrator"; horizontal-stretch: 1; }
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "ALPN"; color: Theme.muted; width: 120px; vertical-alignment: center; }
+                    LineEdit { text <=> root.ed-alpn; placeholder-text: "h2, http/1.1"; horizontal-stretch: 1; }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "Fingerprint"; color: Theme.muted; width: 120px; vertical-alignment: center; }
+                    ComboBox {
+                        model: ["", "chrome", "firefox", "safari", "ios", "android", "edge", "360", "qq", "random", "randomized"];
+                        current-value <=> root.ed-fingerprint;
+                        selected(value) => { root.ed-fingerprint = value; }
+                        width: 170px;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+                }
+            }
+        }
+
+        // ---------- multiplexing ----------
+        Rectangle {
+            background: Theme.panel; border-radius: 12px;
+            vertical-stretch: 0;
+            VerticalLayout {
+                padding: 10px; spacing: 5px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    TouchArea {
+                        width: 240px; height: 20px;
+                        clicked => { root.sec-mux = !root.sec-mux; }
+                        Text {
+                            text: root.sec-mux ? "[-] MULTIPLEXING (MUX)" : "[+] MULTIPLEXING (MUX)";
+                            color: Theme.accent; font-size: 11px; font-weight: 700; vertical-alignment: center;
+                            width: 240px;
+                            horizontal-alignment: left;
+                        }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    CheckBox { text: "Enable mux"; checked <=> root.ed-mux; }
+                }
+                if root.sec-mux: VerticalLayout {
+                    spacing: 5px;
+                    HorizontalLayout {
+                        vertical-stretch: 0;
+                        spacing: 8px;
+                        Text { text: "Concurrency"; color: Theme.muted; width: 120px; vertical-alignment: center; }
+                        LineEdit { text <=> root.ed-mux-concurrency; width: 80px; height: 26px; enabled: root.ed-mux; }
+                        Text { text: "streams per transport connection"; color: Theme.muted; font-size: 10px; vertical-alignment: center; }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+                    Text {
+                        text: "How many connections share one transport connection to the server (default 8).";
+                        color: Theme.muted; font-size: 10px;
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "XUDP (UDP)"; color: Theme.muted; width: 120px; vertical-alignment: center; }
+                        CheckBox { text: "Carry UDP over the multiplexed connection"; checked <=> root.ed-mux-xudp; enabled: root.ed-mux && (root.ed-xudp-supported || root.ed-mux-xudp); }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "XUDP streams"; color: Theme.muted; width: 120px; vertical-alignment: center; }
+                        LineEdit { text <=> root.ed-mux-xudp-concurrency; width: 80px; height: 26px; enabled: root.ed-mux && root.ed-mux-xudp; }
+                        Text { text: "UDP port 443"; color: Theme.muted; vertical-alignment: center; }
+                        ComboBox {
+                            model: ["reject", "allow", "skip"];
+                            current-value <=> root.ed-mux-udp443;
+                            enabled: root.ed-mux && root.ed-mux-xudp;
+                            width: 100px; height: 26px;
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+                    if root.ed-xudp-supported: Text {
+                        text: "reject: drop UDP to port 443 - allow: send it through the tunnel - skip: send it outside the tunnel";
+                        color: Theme.muted; font-size: 10px;
+                    }
+                    if !root.ed-xudp-supported: Text {
+                        text: "The installed Xray-core does not support XUDP - existing values are preserved; switch XUDP off to use this core.";
+                        color: Theme.muted; font-size: 10px;
+                    }
+                    Text {
+                        text: "With MUX off the tunnel behaves exactly as before; the UDP settings only matter while MUX is on.";
+                        color: Theme.muted; font-size: 10px;
+                    }
+                }
+            }
+        }
+
+        // ---------- advanced ----------
+        Rectangle {
+            background: Theme.panel; border-radius: 12px;
+            vertical-stretch: 0;
+            VerticalLayout {
+                padding: 10px; spacing: 5px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    TouchArea {
+                        width: 240px; height: 20px;
+                        clicked => { root.sec-advanced = !root.sec-advanced; }
+                        Text {
+                            text: root.sec-advanced ? "[-] ADVANCED" : "[+] ADVANCED";
+                            color: Theme.accent; font-size: 11px; font-weight: 700; vertical-alignment: center;
+                            width: 240px;
+                            horizontal-alignment: left;
+                        }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+                if root.sec-advanced: VerticalLayout {
+                    spacing: 5px;
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "DNS servers"; color: Theme.muted; width: 120px; vertical-alignment: center; }
+                        LineEdit { text <=> root.ed-dns; placeholder-text: "1.1.1.1, 8.8.8.8 (blank = global)"; horizontal-stretch: 1; }
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "Timeout (s)"; color: Theme.muted; width: 120px; vertical-alignment: center; }
+                        LineEdit { text <=> root.ed-timeout; width: 90px; }
+                        Text { text: "HTTP port"; color: Theme.muted; vertical-alignment: center; }
+                        LineEdit { text <=> root.ed-http-port; placeholder-text: "global"; width: 90px; }
+                        Text { text: "SOCKS port"; color: Theme.muted; vertical-alignment: center; }
+                        LineEdit { text <=> root.ed-socks-port; placeholder-text: "global"; width: 90px; }
+                    }
+                }
+            }
+        }
+
+            }
+        }
+
+        }
+        Text { text: root.validate-fields(root.ed-address,root.ed-port,root.ed-uuid,root.ed-protocol); color: Theme.warn; wrap: word-wrap; font-size: 11px; }
+        Text { text: root.ed-status; color: Theme.warn; wrap: word-wrap; font-size: 12px; }
+        if root.ed-confirm-close: Rectangle {
+            background: #3b3020; border-radius: 8px; height: 62px;
+            HorizontalLayout { padding: 10px; spacing: 10px;
+                Text { text: "Discard your unsaved changes?"; color: Theme.text; wrap: word-wrap; horizontal-stretch: 1; }
+                Button { text: "Keep editing"; clicked => { root.keep_editing_clicked(); } }
+                Button { text: "Discard"; clicked => { root.discard_clicked(); } }
+            }
+        }
+        // ---------- actions ----------
+        HorizontalLayout {
+            vertical-stretch: 0;
+            spacing: 10px;
+            Button { text: "Test connection"; height: 30px; clicked => { root.test_clicked(); } }
+            Rectangle { horizontal-stretch: 1; }
+            Button { text: "Cancel"; height: 30px; clicked => { root.cancel_clicked(); } }
+            Button { text: "Save"; height: 30px; clicked => { root.save_clicked(); } }
+        }
+    }
+}

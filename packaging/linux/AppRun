@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""Run the native V2 payload from a verified, private, content-addressed cache.
+
+Root cannot reliably read a user-owned FUSE mount. Keeping the helper and core
+on the ordinary filesystem lets the existing pkexec bridge use the same paths.
+No configuration, keys, routes or DNS settings are touched by this launcher.
+"""
+import errno
+import hashlib
+import os
+from pathlib import Path
+import shutil
+import sys
+import tempfile
+
+
+def verified(directory, manifest):
+    for line in manifest.splitlines():
+        digest, name = line.split("  ", 1)
+        relative = Path(name)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError("Invalid AppImage payload path")
+        file = directory / relative
+        if not file.is_file() or file.is_symlink():
+            return False
+        if hashlib.sha256(file.read_bytes()).hexdigest() != digest:
+            return False
+    return True
+
+
+def main():
+    os.environ.setdefault("SLINT_SCALE_FACTOR", "1")
+    appdir = Path(__file__).resolve().parent
+    payload = appdir / "usr/lib/sni-tunnel-v2"
+    manifest = (appdir / "payload.sha256").read_text()
+    identity = hashlib.sha256(manifest.encode()).hexdigest()
+    cache_home = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
+    base = cache_home / "sni-tunnel-v2/appimage"
+    base.mkdir(parents=True, exist_ok=True, mode=0o700)
+    destination = base / identity
+    if not verified(destination, manifest):
+        if destination.exists():
+            raise RuntimeError("AppImage cache verification failed; move this cache directory aside and retry")
+        with tempfile.TemporaryDirectory(prefix=".stage-", dir=base) as temporary:
+            staging = Path(temporary) / "payload"
+            shutil.copytree(payload, staging)
+            staging.chmod(0o700)
+            if not verified(staging, manifest):
+                raise RuntimeError("AppImage payload verification failed")
+            try:
+                staging.rename(destination)
+            except OSError as error:
+                if error.errno not in (errno.EEXIST, errno.ENOTEMPTY):
+                    raise
+                # Another launch may finish the same content-addressed copy first.
+                if not verified(destination, manifest):
+                    raise RuntimeError("Concurrent AppImage cache verification failed")
+    executable = destination / "sni-tunnel"
+    os.execv(executable, [str(executable), *sys.argv[1:]])
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as error:
+        sys.exit(f"SNI Tunnel V2 AppImage: {error}")

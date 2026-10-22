@@ -1,0 +1,19 @@
+#!/bin/sh
+# Post-install: create the runtime directory and (optionally) the autostart
+# entry for the headless client.
+set -e
+
+RUNTIME_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/sni-tunnel"
+mkdir -p "$RUNTIME_DIR/bin"
+chmod 700 "$RUNTIME_DIR" || true
+
+if [ -x /usr/bin/sni-tunnel ]; then
+    if command -v runuser >/dev/null 2>&1 && [ -n "${SUDO_USER:-}" ]; then
+        runuser -u "$SUDO_USER" -- mkdir -p "$RUNTIME_DIR/bin" || true
+        chown -R "$SUDO_USER" "$RUNTIME_DIR" || true
+    fi
+fi
+
+echo "sni-tunnel: runtime directory $RUNTIME_DIR"
+echo "sni-tunnel: run 'sni-tunnel gui' for the desktop app or 'sni-tunnel connect' headless"
+exit 0

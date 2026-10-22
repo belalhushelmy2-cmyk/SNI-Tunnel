@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=SNI Tunnel V2
+Comment=VMess tunnel with independent TLS SNI
+Exec=/usr/lib/sni-tunnel-v2/start.sh
+Icon=sni-tunnel-v2
+Terminal=false
+Categories=Network;

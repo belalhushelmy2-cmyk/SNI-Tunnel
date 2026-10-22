@@ -1,32 +1,97 @@
-# SNI Tunnel
+# SNI Tunnel V2
 
-Windows x64 installer, Linux amd64 packages, and source code.
+A Rust + Slint desktop client for Windows and Linux using Xray-core, with
+independent VMess credentials, TLS SNI, WebSocket Host/path and dial address.
+The Linux client now uses the native Slint interface.
 
-## Downloads
+[Latest release](https://github.com/belalhushelmy2-cmyk/SNI-Tunnel/releases/latest)
+· [Validation](TEST_RESULTS.md) · [Migration and rollback](MIGRATION.md)
 
-Open [Releases](https://github.com/belalhushelmy2-cmyk/SNI-Tunnel/releases/latest) for:
+## Downloads and launch
 
-- Windows installer with bundled Xray, Wintun, compatibility core, tun2socks runtime and TAP driver.
-- Linux DEB, RPM and tar.gz packages. Linux uses the kernel TUN device.
-- Complete source ZIP and Linux build scripts.
-- Installation instructions and SHA-256 checksums.
+| Platform | Artifact | Launch |
+| --- | --- | --- |
+| Windows 10/11 x64 | `SNI-Tunnel-V2-Setup-x64.exe` | Install, then open SNI Tunnel V2 |
+| Linux x86_64 | `SNI-Tunnel-V2-2.0.0-x86_64.AppImage` | Mark executable and open |
+| Debian-family amd64 | `sni-tunnel-v2_2.0.0_amd64.deb` | Install using the package manager |
+| Portable Linux | `sni-tunnel-v2_2.0.0_amd64.tar.gz` | Extract and run `start.sh` |
 
-## Installation
+Verify downloads against the release's `SHA256SUMS`. The installers include their
+Xray/helper runtime assets; Rust and Cargo are build tools, not user requirements.
+Linux requires glibc >=2.30, Python 3.8+, fontconfig and X11/Wayland desktop
+libraries. TUN also requires host PolicyKit, iproute2, kmod and a usable TUN device.
+See [AppImage details](packaging/linux/APPIMAGE.md), including its FUSE-free fallback.
 
-Close SNI Tunnel before installing or upgrading Windows. NetMod is not required at runtime. The installer reuses an existing TAP V9 adapter.
+## Interface and connection behavior
 
-Debian/Ubuntu: `sudo apt install ./sni-tunnel-linux-amd64.deb`
+- Dark sidebar, first-click navigation, centered menu rows and a scrolling dashboard.
+- Actual traffic counters/history, session duration, active server/SNI and measured IP.
+- Server search/sorting, clipboard and VMess import/export, duplication and testing.
+- Scrollable editor, UUID visibility, validation and unsaved-change confirmation.
+- Searchable/redacted logs with copy/export and simple/advanced views.
+- Bounded recovery, explicit degraded/error states and cleanup of owned resources.
 
-Fedora: `sudo dnf install ./sni-tunnel-linux-amd64.rpm`
+A successful connection state requires forwarding checks. CPU/RAM observations
+and the exact test scope are in [TEST_RESULTS.md](TEST_RESULTS.md). The first V2
+release still has unexecuted Windows networking, target-distribution installation,
+and Wi-Fi/suspend recovery checks; a successful build does not cover those cases.
 
-Portable Linux: extract the tar.gz and run `./start.sh`. Requires x86_64, glibc 2.30+, Python 3.8 with Tk, iproute2, polkit/pkexec, CA certificates and TUN support.
+Linux defaults to 100% UI scale. Set `SLINT_SCALE_FACTOR` explicitly to override it.
+Its system-proxy adapter supports GNOME/Cinnamon-compatible gsettings desktops.
+Other desktops can use the local HTTP/SOCKS listeners manually or use TUN. Linux
+tray and Windows-only compatibility/kill-switch controls are visibly unavailable.
+The preserved Linux Xray 1.6.1/BadVPN path supports VMess WebSocket + TLS and rejects
+unsupported XUDP/certificate-pin combinations rather than discarding settings.
 
-## Build on Linux
+## Saved profiles
 
-Download and extract **sni-tunnel-source.zip** from the release, then run `sh packaging/linux/build.sh`. Install Rust stable, a C/C++ compiler, CMake and Python first. The first build downloads Rust dependencies.
+V2 uses separate user data:
 
-## Validation and notices
+- Windows: `%LOCALAPPDATA%\SniTunnelV2`
+- Linux: `$XDG_DATA_HOME/sni-tunnel-v2`, normally `~/.local/share/sni-tunnel-v2`
 
-Linux packages were cross-compiled and their contents checked on Windows. Linux desktop/kernel behavior and ISP quota accounting still require testing on a Linux machine.
+Migration requires an empty V2 store, keeps permanent original-byte backups and
+verifies saved/reloaded profiles. Run it as the owner of the original profiles;
+Windows DPAPI data must stay with the same Windows account. Example for the
+previous Linux Tk store:
 
-The Windows compatibility binaries were copied unchanged from the requesting user's existing NetMod installation. See THIRD-PARTY-NOTICES.md inside the downloads for provenance and licensing. Saved profiles, credentials and connection logs are excluded.
+```sh
+./SNI-Tunnel-V2-2.0.0-x86_64.AppImage migrate "$HOME/.config/sni-tunnel-linux"
+```
+
+Disconnect the previous tunnel first. Do not run old/new clients against the same
+TUN adapter. Original profiles and release artifacts remain available for rollback.
+See [MIGRATION.md](MIGRATION.md); the app does not automatically uninstall old clients.
+
+## Build from source
+
+Use the pinned lockfile. Linux GUI build dependencies include a C compiler,
+fontconfig development files, CMake, Python and standard desktop development libs.
+
+```sh
+cargo test --all --locked
+cargo build --release --locked
+```
+
+For the portable glibc-2.30 build, install Zig 0.17.0 and cargo-zigbuild 0.24.0,
+then run:
+
+```sh
+./packaging/linux/build-portable.sh
+python3 packaging/linux/appimage.py
+```
+
+Third-party source/runtime archives are restored and hash-verified automatically
+from the retained v0.4.3 source asset. They are included in complete release source
+ZIPs; `python3 packaging/linux/fetch-vendor.py` restores them in a Git checkout.
+No development caches, private profiles, keys or runtime logs are packaged.
+
+Windows uses the Rust GNU toolchain, w64devkit resources/import libraries, 7-Zip
+and NSIS. `packaging/windows/build.ps1` builds the installer. The Actions workflow
+contains the pinned clean-runner setup; the inherited Windows notes in AGENTS.md
+explain the self-contained linker and compiler stack requirements.
+
+GitHub Actions builds/tests both platforms. Publishing is requested by a main
+commit containing `[publish-release]`, or by the workflow's explicit publish
+input. Assets upload to a draft first; the workflow marks the release Latest only
+after both builds and all uploads succeed. Published version tags are preserved.
