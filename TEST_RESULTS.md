@@ -12,7 +12,7 @@ system-wide TUN test was performed during this V2 validation.
 
 | Check | Result | Scope |
 | --- | --- | --- |
-| Rust regression suite | 116 passed; 5 opt-in tests ignored | `cargo test --no-default-features --locked`: 106 unit, 3 persistence/migration integration, 7 workflow tests |
+| Rust regression suite | 121 passed; 5 opt-in tests ignored | `cargo test --all --locked`: 111 unit (including GUI import), 3 persistence/migration integration, 7 workflow tests |
 | Python suite | 12 passed | Existing Linux profile/editor regressions and shared network-helper recovery/DNS tests; includes a legacy Tk X11 editor test, not native Slint input automation |
 | Native Linux GUI build | Passed | Release software-rendered Slint GUI, built with glibc 2.30 target |
 | Windows x64 GUI build | Passed | Cross-compiled GNU release executable; Windows runtime has not been executed here |
@@ -137,3 +137,13 @@ dashboard/editor scrolling and the editor's fixed-footer check also passed.
 Sidebar icons/labels/markers are vertically centered in fixed 44px rows; focus
 and selection retain constant border geometry. The software-rendered sidebar
 preview was visually inspected. These checks do not add a new network test.
+
+## Server import follow-up
+
+Import and clipboard results are now visible directly on the Servers page and
+are independent of engine status updates. Different credentials, protocols, SNI,
+Host and paths on one host/port are retained; only identical connection settings
+are skipped. Imported ID collisions are reassigned, search is cleared after a
+successful import, and failed saves leave the in-memory configuration unchanged.
+The default-feature Rust regression suite passed all 121 tests (5 ignored),
+including distinct-connection and duplicate-metadata cases.

@@ -2,6 +2,8 @@ SNI Tunnel V2 adds the native Slint desktop interface on Linux alongside Windows
 with a dark sidebar, measured traffic dashboard, server search/sorting, a scrolling
 editor and profile migration with permanent backups.
 
+- Server imports show results on the Servers page and preserve distinct accounts
+  and SNI/transport settings sharing the same endpoint.
 - Sidebar items activate on the first click, with centered icons and equal rows.
 - Linux launchers default to 100% scale and preserve explicit scale overrides.
 - Linux AppImage, DEB and portable tar, Windows x64 installer, complete source
@@ -9,7 +11,7 @@ editor and profile migration with permanent backups.
 - V2 uses separate profile storage. Original profile files and backups are retained.
 - Connection states and traffic counters come from the real networking backend.
 
-Local validation included 116 Rust tests and 12 Python tests, real migration of
+Local validation included 121 Rust tests and 12 Python tests, real migration of
 two saved profiles, HTTPS forwarding, and 12/12 HTTPS requests over 63.58 seconds.
 The native UI input/layout harness checked all six sidebar actions at 100% and
 150% scale. GitHub's build checks must pass before this release is published.

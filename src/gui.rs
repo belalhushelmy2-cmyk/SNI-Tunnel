@@ -441,15 +441,22 @@ fn wire_callbacks(
             let Some(ui) = weak.upgrade() else { return };
             let text = ui.get_import_text().to_string();
             if text.trim().is_empty() {
+                ui.set_import_error(true);
+                ui.set_import_status("Paste a server link or JSON profile first.".into());
                 return;
             }
             match import_profile(&cfg, &text) {
                 Ok(msg) => {
-                    ui.set_detail(msg.into());
+                    ui.set_import_error(false);
+                    ui.set_import_status(msg.into());
                     ui.set_import_text("".into());
+                    ui.set_server_search("".into());
                     refresh_servers(&ui, &cfg, &state);
                 }
-                Err(e) => ui.set_detail(format!("import failed: {e:#}").into()),
+                Err(e) => {
+                    ui.set_import_error(true);
+                    ui.set_import_status(format!("Import failed: {e:#}").into());
+                }
             }
         });
     }
@@ -611,20 +618,29 @@ fn wire_callbacks(
             let text = match clipboard::read_text() {
                 Ok(t) => t,
                 Err(e) => {
-                    ui.set_detail(format!("clipboard failed: {e:#}").into());
+                    ui.set_import_error(true);
+                    ui.set_import_status(
+                        format!("Clipboard failed: {e:#}. Paste the link below instead.").into(),
+                    );
                     return;
                 }
             };
             if text.trim().is_empty() {
-                ui.set_detail("the clipboard is empty".into());
+                ui.set_import_error(true);
+                ui.set_import_status("The clipboard is empty. Copy a server link first.".into());
                 return;
             }
             match import_profile(&cfg, &text) {
                 Ok(msg) => {
-                    ui.set_detail(msg.into());
+                    ui.set_import_error(false);
+                    ui.set_import_status(msg.into());
+                    ui.set_server_search("".into());
                     refresh_servers(&ui, &cfg, &state);
                 }
-                Err(e) => ui.set_detail(format!("import failed: {e:#}").into()),
+                Err(e) => {
+                    ui.set_import_error(true);
+                    ui.set_import_status(format!("Import failed: {e:#}").into());
+                }
             }
         });
     }
@@ -1442,12 +1458,28 @@ fn import_profile(cfg: &Arc<Mutex<AppConfig>>, text: &str) -> Result<String> {
         anyhow::bail!("no server profiles found in the input");
     }
     let mut c = cfg.lock().unwrap();
-    let messages = merge_imported(&mut c, imported);
-    store::save(&c)?;
+    let mut updated = c.clone();
+    let messages = merge_imported(&mut updated, imported);
+    store::save(&updated)?;
+    *c = updated;
     Ok(messages.join("; "))
 }
 
-/// Merge freshly-parsed profiles into the config, skipping transport duplicates.
+/// Compare connection settings independently of labels and measured state.
+fn same_imported_connection(a: &ServerProfile, b: &ServerProfile) -> bool {
+    let normalize = |p: &ServerProfile| {
+        let mut p = p.clone();
+        p.id.clear();
+        p.name.clear();
+        p.remark.clear();
+        p.latency_ms = 0;
+        p.last_test.clear();
+        p
+    };
+    normalize(a) == normalize(b)
+}
+
+/// Merge freshly-parsed profiles into the config, skipping identical connections.
 /// Pure (no I/O) so it can be unit-tested.
 fn merge_imported(c: &mut AppConfig, imported: Vec<ServerProfile>) -> Vec<String> {
     let mut messages: Vec<String> = Vec::new();
@@ -1458,12 +1490,12 @@ fn merge_imported(c: &mut AppConfig, imported: Vec<ServerProfile>) -> Vec<String
         if p.name.trim().is_empty() {
             p.name = format!("{}:{}", p.address, p.port);
         }
-        if c.servers
-            .iter()
-            .any(|s| s.address == p.address && s.port == p.port && s.network == p.network)
-        {
+        if c.servers.iter().any(|s| same_imported_connection(s, &p)) {
             messages.push(format!("skipped duplicate {}:{}", p.address, p.port));
             continue;
+        }
+        if c.servers.iter().any(|s| s.id == p.id) {
+            p.id = uuid::Uuid::new_v4().to_string();
         }
         if c.selected_server.is_none() {
             c.selected_server = Some(p.id.clone());
@@ -1497,12 +1529,49 @@ mod tests {
     }
 
     #[test]
-    fn import_skips_transport_duplicates() {
+    fn import_skips_identical_connections() {
         let mut c = AppConfig::default();
         merge_imported(&mut c, vec![srv("a.example", 443, "ws")]);
         let msgs = merge_imported(&mut c, vec![srv("a.example", 443, "ws")]);
         assert_eq!(c.servers.len(), 1);
         assert!(msgs[0].starts_with("skipped duplicate"));
+    }
+
+    #[test]
+    fn import_keeps_distinct_accounts_and_connection_settings() {
+        let mut c = AppConfig::default();
+        let base = srv("a.example", 443, "ws");
+        let mut profiles = vec![base.clone()];
+        for change in 0..5 {
+            let mut p = base.clone();
+            match change {
+                0 => p.uuid = "other-account".into(),
+                1 => p.sni = "other.example".into(),
+                2 => p.ws_path = "/other".into(),
+                3 => p.ws_host = "host.example".into(),
+                _ => p.protocol = "vless".into(),
+            }
+            profiles.push(p);
+        }
+        merge_imported(&mut c, profiles);
+        assert_eq!(c.servers.len(), 6);
+        let ids: std::collections::HashSet<_> = c.servers.iter().map(|s| &s.id).collect();
+        assert_eq!(ids.len(), 6, "distinct imported profiles need distinct IDs");
+    }
+
+    #[test]
+    fn import_duplicate_ignores_labels_and_test_results() {
+        let mut c = AppConfig::default();
+        let base = srv("a.example", 443, "ws");
+        merge_imported(&mut c, vec![base.clone()]);
+        let mut renamed = base;
+        renamed.id = "new-id".into();
+        renamed.name = "new label".into();
+        renamed.remark = "new remark".into();
+        renamed.latency_ms = 80;
+        renamed.last_test = "recent".into();
+        merge_imported(&mut c, vec![renamed]);
+        assert_eq!(c.servers.len(), 1);
     }
 
     #[test]

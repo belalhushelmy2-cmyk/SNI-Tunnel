@@ -1,3 +1,13 @@
+# Server import follow-up — 2026-10-22
+
+Found that import feedback appeared only in the Overview detail, while an
+over-broad host/port/transport duplicate check skipped distinct accounts and
+SNI/Host/path variants. Results now stay visible on Servers; empty input and
+clipboard failures are explicit, successful imports clear the search filter,
+only identical connection settings are skipped, ID collisions are reassigned,
+and persistence failure does not mutate the in-memory config. All 121 default-
+feature Rust tests passed; 5 opt-in tests remain ignored.
+
 # GitHub release preparation — 2026-10-22
 
 Connected repository access is available. Prepared a checked source import and

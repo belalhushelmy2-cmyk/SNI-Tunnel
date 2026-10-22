@@ -139,6 +139,8 @@ export component AppWindow inherits Window {
     // ---- servers ----
     in-out property <[ServerRow]> servers: [];
     in-out property <string> import-text: "";
+    in-out property <string> import-status: "";
+    in-out property <bool> import-error: false;
     in-out property <string> server-search: "";
     in-out property <string> log-search: "";
     in-out property <bool> connection-busy: false;
@@ -344,6 +346,12 @@ export component AppWindow inherits Window {
                     horizontal-stretch: 1;
                 }
                 Button { text: "Import"; height: 30px; clicked => { root.import_clicked(); } }
+            }
+            if root.import-status != "": Text {
+                text: root.import-status;
+                color: root.import-error ? #ff9c9c : Theme.accent;
+                wrap: word-wrap;
+                font-size: 12px;
             }
             HorizontalLayout { spacing: 10px;
                 LineEdit { text <=> root.server-search; placeholder-text: "Search servers, address or SNI"; horizontal-stretch: 1; }
