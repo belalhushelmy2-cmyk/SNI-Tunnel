@@ -6,31 +6,7 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      arch:
-    name: Arch binary and offline dependencies
-    needs: linux
-    runs-on: ubuntu-24.04
-    container: archlinux:base-devel
-    timeout-minutes: 40
-    steps:
-      - name: Install packaging tools
-        run: pacman -Syu --noconfirm python git gnupg
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: v2-linux-and-source
-          path: target/linux-assets
-      - name: Build binary package and signed dependency bundle
-        run: python3 packaging/offline/arch.py --assets target/linux-assets --output releases/v2/arch
-      - name: Check offline executable integrity
-        run: sh releases/v2/arch/*offline.bin --check
-      - uses: actions/upload-artifact@v4
-        with:
-          name: v2-arch
-          path: releases/v2/arch/*
-          if-no-files-found: error
-
-  publish:
+      publish:
         description: Publish v2.0.2 after successful builds
         type: boolean
         default: false
