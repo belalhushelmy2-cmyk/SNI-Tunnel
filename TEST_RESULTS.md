@@ -1,3 +1,11 @@
+# 2.0.2 dependency-bundle validation
+
+The release workflow gates publication on the Rust regressions, Linux GUI checks, Windows executable/installer checks, Debian payload verification, AppImage smoke test, and successful creation of both offline dependency bundles.
+
+New local verification: self-extracting installer checksum validation, extraction into paths with spaces, inner file verification, and rejection of modified outer/inner payloads. Bundled Arch dependencies are checked against repository SHA256 values and official package signatures. Ubuntu dependency downloads use apt repository authentication.
+
+This release does not claim a fresh-device TUN connection test on Omarchy or Ubuntu, a Windows driver/network lifecycle test, or Android support. Packaging a dependency does not prove that a remote server's credentials, TLS/SNI settings, or network work. Existing version 2.0.1 behavior and test details follow.
+
 # SNI Tunnel V2 validation — 2026-10-22
 
 ## Result and replacement status

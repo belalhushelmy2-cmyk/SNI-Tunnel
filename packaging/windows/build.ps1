@@ -41,3 +41,14 @@ New-Item -ItemType Directory -Force releases/v2/windows | Out-Null
 makensis /V2 packaging/windows/SNI-Tunnel.nsi
 if ($LASTEXITCODE -ne 0) { throw 'NSIS installer build failed' }
 Write-Host 'Installer: releases/v2/windows/SNI-Tunnel-V2-Setup-x64.exe'
+# Portable distribution carries exactly the same runtimes as the installer.
+$portable=Join-Path $root 'target/windows-portable'
+New-Item -ItemType Directory -Force $portable | Out-Null
+Copy-Item target/release/sni-tunnel.exe $portable
+Copy-Item packaging/README-INSTALL.txt,THIRD-PARTY-NOTICES.md,packaging/windows/install-tap.ps1 $portable
+foreach ($folder in @('core','compat','driver')) {
+    Copy-Item -Recurse -Force "packaging/staging/windows/$folder" $portable
+}
+Copy-Item -Recurse -Force packaging/licenses $portable
+$version=(Select-String -Path Cargo.toml -Pattern '^version = "([^"]+)"').Matches[0].Groups[1].Value
+Compress-Archive -Force -Path "$portable/*" -DestinationPath "releases/v2/windows/SNI-Tunnel-V2-$version-windows-x64-portable.zip"

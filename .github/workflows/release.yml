@@ -6,8 +6,32 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      publish:
-        description: Publish v2.0.1 after successful builds
+      arch:
+    name: Arch binary and offline dependencies
+    needs: linux
+    runs-on: ubuntu-24.04
+    container: archlinux:base-devel
+    timeout-minutes: 40
+    steps:
+      - name: Install packaging tools
+        run: pacman -Syu --noconfirm python git gnupg
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: v2-linux-and-source
+          path: target/linux-assets
+      - name: Build binary package and signed dependency bundle
+        run: python3 packaging/offline/arch.py --assets target/linux-assets --output releases/v2/arch
+      - name: Check offline executable integrity
+        run: sh releases/v2/arch/*offline.bin --check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v2-arch
+          path: releases/v2/arch/*
+          if-no-files-found: error
+
+  publish:
+        description: Publish v2.0.2 after successful builds
         type: boolean
         default: false
 permissions:
@@ -16,7 +40,7 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_BUILD_JOBS: '4'
   RUST_MIN_STACK: '16777216'
-  RELEASE_TAG: v2.0.1
+  RELEASE_TAG: v2.0.2
 
 jobs:
   linux:
@@ -37,7 +61,7 @@ jobs:
       - name: Install Linux build and UI check dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake pkg-config libfontconfig1-dev libxkbcommon-dev libxkbcommon-x11-0 libxcb-xkb1 libxcursor1 libxrandr2 libxi6 libx11-dev libgl1-mesa-dev python3-tk python3-venv xvfb fonts-dejavu-core
+          sudo apt-get install -y build-essential cmake pkg-config libfontconfig1-dev libxkbcommon-dev libxkbcommon-x11-0 libxcb-xkb1 libxcursor1 libxrandr2 libxi6 dpkg-dev libx11-dev libgl1-mesa-dev python3-tk python3-venv xvfb fonts-dejavu-core
       - name: Check formatting
         run: rustfmt --edition 2021 --config skip_children=true --check src/migration.rs src/linux_tunnel.rs src/gui.rs src/engine.rs src/model.rs src/util.rs src/store.rs src/session.rs src/main.rs src/vmess.rs src/sysproxy_linux.rs src/autostart_linux.rs build.rs tests/migration_v2.rs tests/import_persistence.rs src/profile_import.rs src/latency.rs src/tray_linux.rs src/tray.rs src/storecli.rs examples/v2_preview.rs
       - name: Clippy
@@ -46,6 +70,8 @@ jobs:
         run: cargo test --all --locked
       - name: Python profile/editor/network regression suite
         run: xvfb-run -a python3 -m unittest discover -s packaging/linux -p 'test_*.py'
+      - name: Offline installer regression
+        run: python3 -m unittest discover -s packaging/offline -p 'test_*.py'
       - name: Native Slint first-click, layout and scrolling checks
         run: |
           cargo run --locked --example v2_preview -- 1
@@ -62,16 +88,18 @@ jobs:
       - name: Build and smoke-test AppImage
         run: |
           python3 packaging/linux/appimage.py
-          xvfb-run -a python3 packaging/linux/verify-appimage.py releases/v2/linux/SNI-Tunnel-V2-2.0.1-x86_64.AppImage
+          xvfb-run -a python3 packaging/linux/verify-appimage.py releases/v2/linux/SNI-Tunnel-V2-2.0.2-x86_64.AppImage
       - name: Verify Debian payload without installing
         run: |
-          dpkg-deb --info releases/v2/linux/sni-tunnel-v2_2.0.1_amd64.deb
-          dpkg-deb --extract releases/v2/linux/sni-tunnel-v2_2.0.1_amd64.deb target/deb-check
+          dpkg-deb --info releases/v2/linux/sni-tunnel-v2_2.0.2_amd64.deb
+          dpkg-deb --extract releases/v2/linux/sni-tunnel-v2_2.0.2_amd64.deb target/deb-check
           target/deb-check/usr/lib/sni-tunnel-v2/sni-tunnel --help
           cmp target/deb-check/usr/lib/sni-tunnel-v2/sni-tunnel target/x86_64-unknown-linux-gnu/release/sni-tunnel
+      - name: Bundle Ubuntu 24.04 dependencies and executable offline installer
+        run: ./packaging/offline/ubuntu.sh
       - name: Package complete source and release documentation
         run: |
-          python3 packaging/release-source.py releases/v2/linux/SNI-Tunnel-V2-2.0.1-source.zip
+          python3 packaging/release-source.py releases/v2/linux/SNI-Tunnel-V2-2.0.2-source.zip
           cp TEST_RESULTS.md MIGRATION.md RELEASE_NOTES.md releases/v2/linux/
       - uses: actions/upload-artifact@v4
         with:
@@ -132,12 +160,36 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: v2-windows
-          path: releases/v2/windows/SNI-Tunnel-V2-Setup-x64.exe
+          path: releases/v2/windows/*
+          if-no-files-found: error
+
+  arch:
+    name: Arch binary and offline dependencies
+    needs: linux
+    runs-on: ubuntu-24.04
+    container: archlinux:base-devel
+    timeout-minutes: 40
+    steps:
+      - name: Install packaging tools
+        run: pacman -Syu --noconfirm python git gnupg
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: v2-linux-and-source
+          path: target/linux-assets
+      - name: Build binary package and signed dependency bundle
+        run: python3 packaging/offline/arch.py --assets target/linux-assets --output releases/v2/arch
+      - name: Check offline executable integrity
+        run: sh releases/v2/arch/*offline.bin --check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v2-arch
+          path: releases/v2/arch/*
           if-no-files-found: error
 
   publish:
     name: Publish requested latest release
-    needs: [linux, windows]
+    needs: [linux, windows, arch]
     if: github.ref == 'refs/heads/main' && ((github.event_name == 'push' && contains(github.event.head_commit.message, '[publish-release]')) || (github.event_name == 'workflow_dispatch' && inputs.publish))
     runs-on: ubuntu-24.04
     permissions:
@@ -153,10 +205,12 @@ jobs:
           from pathlib import Path
           import hashlib
           root = Path('release')
-          required = ['SNI-Tunnel-V2-Setup-x64.exe', 'SNI-Tunnel-V2-2.0.1-x86_64.AppImage', 'sni-tunnel-v2_2.0.1_amd64.deb', 'sni-tunnel-v2_2.0.1_amd64.tar.gz', 'SNI-Tunnel-V2-2.0.1-source.zip', 'TEST_RESULTS.md', 'MIGRATION.md', 'RELEASE_NOTES.md']
+          required = ['SNI-Tunnel-V2-Setup-x64.exe', 'SNI-Tunnel-V2-2.0.2-x86_64.AppImage', 'sni-tunnel-v2_2.0.2_amd64.deb', 'sni-tunnel-v2_2.0.2_amd64.tar.gz', 'SNI-Tunnel-V2-2.0.2-source.zip', 'TEST_RESULTS.md', 'MIGRATION.md', 'RELEASE_NOTES.md']
+          required += ['sni-tunnel-v2-bin-2.0.2-1-x86_64.pkg.tar.zst', 'SNI-Tunnel-V2-2.0.2-windows-x64-portable.zip']
+          required += [f'SNI-Tunnel-V2-2.0.2-{platform}-x86_64-offline.{ext}' for platform in ['arch','ubuntu-24.04'] for ext in ['bin','tar.gz']]
           assert all((root/name).is_file() for name in required)
           assert all((root/name).stat().st_size > 1000000 for name in required[:5])
-          (root/'SHA256SUMS').write_text(''.join(hashlib.sha256((root/name).read_bytes()).hexdigest()+'  '+name+'\n' for name in sorted(required)))
+          (root/'SHA256SUMS').write_text(''.join(hashlib.sha256((root/name).read_bytes()).hexdigest()+'  '+name+'\n' for name in sorted(p.name for p in root.iterdir() if p.is_file() and p.name != 'SHA256SUMS')))
       - name: Refuse to modify an existing published version
         env:
           GH_TOKEN: ${{ github.token }}
@@ -167,9 +221,9 @@ jobs:
       - name: Upload all assets to a draft first
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.0.1
+          tag_name: v2.0.2
           target_commitish: ${{ github.sha }}
-          name: SNI Tunnel V2 2.0.1
+          name: SNI Tunnel V2 2.0.2
           body_path: release/RELEASE_NOTES.md
           draft: true
           prerelease: false

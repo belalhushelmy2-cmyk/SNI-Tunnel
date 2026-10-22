@@ -1,0 +1,40 @@
+pkgname=sni-tunnel-v2-bin
+pkgver=2.0.1
+pkgrel=1
+pkgdesc='Native Slint tunnel client with Xray, independent TLS SNI and Linux TUN'
+arch=('x86_64')
+url='https://github.com/belalhushelmy2-cmyk/SNI-Tunnel'
+license=('LicenseRef-SNI-Tunnel')
+depends=('glibc' 'gcc-libs' 'fontconfig' 'libxkbcommon' 'libxkbcommon-x11'
+         'libxcb' 'libx11' 'libxcursor' 'libxrandr' 'libxi' 'wayland'
+         'python' 'iproute2' 'polkit' 'ca-certificates' 'kmod' 'glib2' 'dbus')
+optdepends=('wl-clipboard: clipboard import on Wayland'
+            'xclip: clipboard import on X11'
+            'hyprpolkitagent: authentication dialog on Hyprland/Omarchy'
+            'polkit-gnome: authentication dialog on other desktops')
+provides=("sni-tunnel-v2=$pkgver")
+conflicts=('sni-tunnel-v2')
+options=('!strip' '!debug')
+source=("$url/releases/download/v$pkgver/sni-tunnel-v2_${pkgver}_amd64.tar.gz")
+sha256sums=('fee9a3bc2abebd8e2479dc19bee7b82167ea8a6e06f65154be3d62ad60840a82')
+
+package() {
+    install -d "$pkgdir/usr/lib/sni-tunnel-v2" "$pkgdir/usr/bin"
+    cp -a "$srcdir/sni-tunnel/." "$pkgdir/usr/lib/sni-tunnel-v2/"
+    printf '#!/bin/sh\nexec /usr/lib/sni-tunnel-v2/start.sh "$@"\n' > "$pkgdir/usr/bin/sni-tunnel-v2"
+    chmod 755 "$pkgdir/usr/bin/sni-tunnel-v2"
+    install -Dm644 "$srcdir/sni-tunnel/icon.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/sni-tunnel-v2.png"
+    install -d "$pkgdir/usr/share/applications"
+    cat > "$pkgdir/usr/share/applications/sni-tunnel-v2.desktop" <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=SNI Tunnel V2
+Comment=Native tunnel client with independent TLS SNI
+Exec=sni-tunnel-v2
+Icon=sni-tunnel-v2
+Terminal=false
+Categories=Network;
+DESKTOP
+    install -Dm644 "$srcdir/sni-tunnel/THIRD-PARTY-NOTICES.md" "$pkgdir/usr/share/licenses/$pkgname/THIRD-PARTY-NOTICES.md"
+    cp -a "$srcdir/sni-tunnel/licenses" "$pkgdir/usr/share/licenses/$pkgname/"
+}
