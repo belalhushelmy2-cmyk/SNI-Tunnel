@@ -55,6 +55,10 @@ public final class Profile {
     private static String decode(String value) {
         return new String(Base64.getDecoder().decode(value.replace('-','+').replace('_','/').replaceAll("\\s", "")), StandardCharsets.UTF_8);
     }
+    public void validateForSave() throws Exception {
+        JSONObject fields=new JSONObject(value.toString()).put("allowInsecure",false);
+        new Profile(fields).config(1080);
+    }
     public JSONObject config(int port) throws Exception {
         JSONObject v = value;
         JSONObject user = new JSONObject().put("id",v.getString("id")).put("security",v.optString("scy","auto"));
@@ -86,7 +90,7 @@ public final class Profile {
         String alpn=profile.optString("alpn","").trim();
         if(!alpn.isEmpty()){JSONArray names=new JSONArray();for(String name:alpn.split(","))if(!name.trim().isEmpty())names.put(name.trim());options.put("alpn",names);}
         String fingerprint=profile.optString("fp","").trim();if(!fingerprint.isEmpty())options.put("fingerprint",fingerprint);
-        if(profile.optBoolean("allowInsecure",false)&&pin.isEmpty())throw new Exception("This import requests unverified TLS. Edit the server and supply a certificate pin or correct verification name.");
+        if(profile.optBoolean("allowInsecure",false)&&pin.isEmpty())throw new Exception("Allow insecure certificate discovery has not completed.");
         return options;
     }
 

@@ -1,6 +1,6 @@
 ## Android phone and Android TV
 
-Native Android 1.0.1 phone/TV apps are available in the [Android project](android/README.md).
+Native Android 1.0.2 phone/TV apps are available in the [Android project](android/README.md).
 Both require Android 10+ and 64-bit ARM/x86_64 userspace. They bundle Xray and
 use Android's VPN permission flow. TV adds a Leanback launcher and D-pad controls.
 See [Android validation](android/TEST_RESULTS.md) and its documented limits.

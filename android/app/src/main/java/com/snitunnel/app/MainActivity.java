@@ -23,7 +23,7 @@ public final class MainActivity extends Activity {
     private final Handler handler=new Handler(Looper.getMainLooper());
     private final Map<String,Long> latencies=new HashMap<>();
     private ProfileStore store;private AppSettings settings;private List<Profile> profiles=new ArrayList<>();
-    private LinearLayout root,content,sidebar,serverList;private ScrollView scroll;
+    private LinearLayout root,content,sidebar,serverList,topBar;private ScrollView scroll;
     private TextView state,traffic,activityLog,feedback;private EditText importBox,search;
     private boolean tv,readable=true,sortLatency;private int page;private String query="";
     private final Runnable tick=new Runnable(){public void run(){refreshStatus();handler.postDelayed(this,1000);}};
@@ -32,12 +32,18 @@ public final class MainActivity extends Activity {
         tv=BuildConfig.FLAVOR.equals("tv")||getSystemService(UiModeManager.class).getCurrentModeType()==Configuration.UI_MODE_TYPE_TELEVISION;
         page=saved==null?0:saved.getInt("page",0);load();
         root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(0xff0c111a);
-        if(!tv){LinearLayout top=new LinearLayout(this);top.setPadding(dp(12),dp(4),dp(12),dp(4));button(top,"☰  SNI TUNNEL",v->drawer());root.addView(top);}
+        if(!tv){topBar=new LinearLayout(this);topBar.setPadding(dp(12),dp(8),dp(12),dp(4));button(topBar,"☰  SNI TUNNEL",v->drawer());root.addView(topBar);}
+        root.setOnApplyWindowInsetsListener((view,insets)->{
+            int left,top,right,bottom;
+            if(Build.VERSION.SDK_INT>=30){android.graphics.Insets safe=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout()|WindowInsets.Type.ime());left=safe.left;top=safe.top;right=safe.right;bottom=safe.bottom;}
+            else {left=insets.getSystemWindowInsetLeft();top=insets.getSystemWindowInsetTop();right=insets.getSystemWindowInsetRight();bottom=insets.getSystemWindowInsetBottom();DisplayCutout cutout=insets.getDisplayCutout();if(cutout!=null){left=Math.max(left,cutout.getSafeInsetLeft());top=Math.max(top,cutout.getSafeInsetTop());right=Math.max(right,cutout.getSafeInsetRight());bottom=Math.max(bottom,cutout.getSafeInsetBottom());}}
+            view.setPadding(left,top,right,bottom);return insets;
+        });
         LinearLayout body=new LinearLayout(this);root.addView(body,new LinearLayout.LayoutParams(-1,0,1));
         if(tv){sidebar=new LinearLayout(this);sidebar.setOrientation(LinearLayout.VERTICAL);sidebar.setPadding(dp(14),dp(28),dp(14),dp(20));sidebar.setBackgroundColor(0xff101821);ScrollView navigation=new ScrollView(this);navigation.setFillViewport(true);navigation.addView(sidebar);body.addView(navigation,new LinearLayout.LayoutParams(dp(170),-1));}
         scroll=new ScrollView(this);scroll.setFillViewport(true);body.addView(scroll,new LinearLayout.LayoutParams(0,-1,1));
         content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(tv?28:20),dp(22),dp(tv?28:20),dp(30));scroll.addView(content);
-        setContentView(root);render();
+        setContentView(root);root.requestApplyInsets();render();
         if(Build.VERSION.SDK_INT>=33&&checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},20);
     }
     @Override protected void onSaveInstanceState(Bundle out){out.putInt("page",page);super.onSaveInstanceState(out);}
@@ -48,7 +54,7 @@ public final class MainActivity extends Activity {
         PopupWindow window=new PopupWindow(menu,dp(240),-2,true);window.setBackgroundDrawable(shape(0xff101821,0xff2b3948));window.setElevation(dp(12));
         label(menu,"SNI TUNNEL",20,ACCENT);
         for(int n=0;n<PAGES.length;n++){final int dest=n;button(menu,(n==page?"●  ":"    ")+PAGES[n],v->{window.dismiss();navigate(dest);});}
-        window.showAtLocation(root,Gravity.TOP|Gravity.START,0,dp(45));
+        window.showAsDropDown(topBar,0,0,Gravity.START);
     }
     private void navigate(int target){page=target;render();scroll.post(()->scroll.scrollTo(0,0));}
     private void render(){
@@ -102,9 +108,12 @@ public final class MainActivity extends Activity {
         EditText uuid=field(form,"VMess UUID",old.optString("id"));uuid.setInputType(129);
         Spinner net=spinner(form,new String[]{"tcp","ws","grpc"});net.setSelection(Arrays.asList("tcp","ws","grpc").indexOf(old.optString("net","tcp")));
         CheckBox tls=check(form,"TLS",old.optString("tls").equals("tls"));
+        CheckBox insecure=check(form,"Allow insecure",old.optBoolean("allowInsecure",false));
+        label(form,"Skip certificate identity verification for this server. Use only when required by your server.",12,MUTED);
+        insecure.setEnabled(tls.isChecked());tls.setOnCheckedChangeListener((view,enabled)->insecure.setEnabled(enabled));
         EditText sni=field(form,"TLS SNI",old.optString("sni"));EditText host=field(form,"WebSocket Host",old.optString("host"));EditText path=field(form,"WebSocket path / gRPC service",old.optString("path","/"));
         EditText verifyName=field(form,"Certificate verification name (optional)",old.optString("verifyPeerCertByName"));
-        label(form,"For domain fronting, verification name can differ from SNI. Certificate CA validation stays enabled.",12,MUTED);
+        label(form,"Verification name may differ from SNI. Applies when Allow insecure is off and no certificate pin is set.",12,MUTED);
         EditText pin=field(form,"Trusted certificate SHA256 pin (optional)",old.optString("pinnedPeerCertSha256"));
         label(form,"A leaf certificate pin replaces normal name/CA validation. Enter only a fingerprint you trust.",12,MUTED);
         EditText alpn=field(form,"ALPN (comma separated, optional)",old.optString("alpn"));
@@ -113,8 +122,8 @@ public final class MainActivity extends Activity {
         CheckBox mux=check(form,"Multiplexing",old.optBoolean("mux",false));
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle(existing==null?"Add server":"Edit server").setView(scroll).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();dialog.show();
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{try{
-            JSONObject data=new JSONObject(old.toString()).put("ps",name.getText().toString().trim()).put("add",address.getText().toString().trim()).put("port",Integer.parseInt(port.getText().toString())).put("id",uuid.getText().toString().trim()).put("net",net.getSelectedItem().toString()).put("tls",tls.isChecked()?"tls":"").put("sni",sni.getText().toString().trim()).put("host",host.getText().toString().trim()).put("path",path.getText().toString()).put("verifyPeerCertByName",verifyName.getText().toString().trim()).put("pinnedPeerCertSha256",pin.getText().toString().trim()).put("alpn",alpn.getText().toString().trim()).put("fp",fingerprint.getText().toString().trim()).put("scy",encryption.getSelectedItem().toString()).put("mux",mux.isChecked()).put("allowInsecure",false);
-            Profile changed=new Profile(data);changed.config(1080);List<Profile> candidate=new ArrayList<>();for(Profile p:profiles)candidate.add(existing!=null&&p.id().equals(existing.id())?changed:p);if(existing==null)candidate.add(changed);
+            JSONObject data=new JSONObject(old.toString()).put("ps",name.getText().toString().trim()).put("add",address.getText().toString().trim()).put("port",Integer.parseInt(port.getText().toString())).put("id",uuid.getText().toString().trim()).put("net",net.getSelectedItem().toString()).put("tls",tls.isChecked()?"tls":"").put("sni",sni.getText().toString().trim()).put("host",host.getText().toString().trim()).put("path",path.getText().toString()).put("verifyPeerCertByName",verifyName.getText().toString().trim()).put("pinnedPeerCertSha256",pin.getText().toString().trim()).put("alpn",alpn.getText().toString().trim()).put("fp",fingerprint.getText().toString().trim()).put("scy",encryption.getSelectedItem().toString()).put("mux",mux.isChecked()).put("allowInsecure",insecure.isChecked());
+            Profile changed=new Profile(data);changed.validateForSave();List<Profile> candidate=new ArrayList<>();for(Profile p:profiles)candidate.add(existing!=null&&p.id().equals(existing.id())?changed:p);if(existing==null)candidate.add(changed);
             store.save(candidate);if(profiles.isEmpty())store.select(changed.id());load();dialog.dismiss();render();message("Server saved.");
         }catch(Exception e){Toast.makeText(this,Events.clean(e.getMessage()),Toast.LENGTH_LONG).show();}});
     }

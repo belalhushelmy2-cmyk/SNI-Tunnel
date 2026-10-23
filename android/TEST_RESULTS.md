@@ -1,3 +1,24 @@
+# Android 1.0.2 validation — 2026-10-23
+
+- Signed phone/TV release builds succeeded; 19 JVM tests per flavor passed
+  (38 executions), zero lint errors. Existing localization/banner warnings and
+  expected warnings for explicit insecure certificate discovery remain.
+- Both signatures match 1.0.1; versionCode 3. `adb install -r` updated both
+  existing emulator apps while retaining their profile stores.
+- API 35 x86_64 phone with the tall display-cutout overlay: menu button starts
+  below the cutout/status bar and opens the drawer with one click.
+- Phone: edited a synthetic TLS server, enabled Allow insecure, saved/reopened
+  the editor and verified the switch remained checked. Connected and forwarded
+  an ordinary Android shell HTTP request through a self-signed VMess/WS/TLS
+  endpoint with independent custom SNI/Host. Disconnected successfully.
+- The insecure compatibility path discovers a session-only leaf pin, preserving
+  saved server fields. Strict TLS and explicit pins bypass discovery, covered
+  by regression tests. Unresolved insecure configurations cannot start Xray.
+
+Physical notched devices and physical TV remote behavior remain unverified.
+
+## Previous 1.0.1 validation
+
 # Android 1.0.1 validation — 2026-10-23
 
 Build: JDK 21, Gradle 8.11.1, SDK/build tools 35. Minimum API 29, target 35,

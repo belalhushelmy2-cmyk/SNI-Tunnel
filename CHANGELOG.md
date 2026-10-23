@@ -82,3 +82,10 @@ See android/TEST_RESULTS.md for exact scope and physical-device limitations.
 Release CI also gates Android unit/lint/build checks and validates the locally
 tested, signed APKs against android/release-assets.json before publication.
 Publication is pending the workflow's successful final gates at this checkpoint.
+
+## Android 1.0.2
+
+- Added per-server Allow insecure to phone and TV editors, with desktop-compatible
+  unauthenticated session-certificate discovery. Explicit trusted pins take precedence.
+- Phone header and drawer now respect system bars and camera cutouts.
+- Retained signing identity; versionCode 3 supports updates over 1.0.1.

@@ -67,7 +67,9 @@ public final class TunnelService extends VpnService {
         }catch(Exception|LinkageError error){Events.add("Startup: "+error.getClass().getSimpleName()+": "+error.getMessage());finish("Connection failed · "+Events.hint());}
     }
     private void startCore()throws Exception{
-        config=new File(getFilesDir(),"active-xray.json");write(config,profile.config(port).toString());
+        config=new File(getFilesDir(),"active-xray.json");Profile runtime=CertificatePin.prepare(profile,settings.timeout());
+        if(profile.value.optBoolean("allowInsecure",false))Events.add("Allow insecure enabled: server identity is not authenticated.");
+        write(config,runtime.config(port).toString());
         File executable=new File(getApplicationInfo().nativeLibraryDir,"libxray.so");
         if(!executable.canExecute())throw new Exception("Bundled core is not executable on this device");
         core=new ProcessBuilder(executable.getAbsolutePath(),"run","-config",config.getAbsolutePath()).redirectErrorStream(true).start();
