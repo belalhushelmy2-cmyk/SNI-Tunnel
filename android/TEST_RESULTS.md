@@ -11,6 +11,8 @@
   the editor and verified the switch remained checked. Connected and forwarded
   an ordinary Android shell HTTP request through a self-signed VMess/WS/TLS
   endpoint with independent custom SNI/Host. Disconnected successfully.
+- TV landscape: the same edit/save/reopen and self-signed VMess/WS/TLS
+  forwarding check passed, followed by Disconnect.
 - The insecure compatibility path discovers a session-only leaf pin, preserving
   saved server fields. Strict TLS and explicit pins bypass discovery, covered
   by regression tests. Unresolved insecure configurations cannot start Xray.
