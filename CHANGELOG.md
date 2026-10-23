@@ -110,5 +110,6 @@ Publication is pending the workflow's successful final gates at this checkpoint.
   on cancellation instead of leaving stalled handshakes behind.
 - Stagger dual-stack diagnostic/TLS connections, with four concurrent attempts
   at most and the original caller deadline. Report DNS + TCP timing honestly.
-- Add local-only checkpoint benchmarks and performance reports. The installed
-  app, active connection, bundled cores and published releases are untouched.
+- Add local-only checkpoint benchmarks and performance reports, documenting
+  throughput tradeoffs and the local-proxy-only scope. Bundle the measured
+  changes in versioned desktop installers; retain pinned cores and profiles.
