@@ -17,3 +17,6 @@ __pycache__/
 # Pinned third-party archives are restored by fetch-vendor.py.
 /packaging/vendor/*.zip
 /packaging/vendor/*.tar.gz
+
+# Temporary checkpoint benchmark adapter (created and removed by benchmark-proxy.py).
+/examples/__perf_baseline_generated.rs

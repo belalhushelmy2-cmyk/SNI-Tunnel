@@ -122,3 +122,30 @@ GitHub Actions builds/tests both platforms. Publishing is requested by a main
 commit containing `[publish-release]`, or by the workflow's explicit publish
 input. Assets upload to a draft first; the workflow marks the release Latest only
 after both builds and all uploads succeed. Published version tags are preserved.
+
+## Performance controls and measurements
+
+Settings → Local proxy performance offers Balanced (the conservative default),
+Low Latency (TCP_NODELAY), and Maximum Throughput (TCP_NODELAY plus 64 KiB
+relay buffers per direction). These apply on the next proxy session; they never
+change saved server credentials, `ea.com` SNI, TLS verification, MUX, DNS or MTU.
+The selector is disabled in TUN mode because that datapath bypasses this relay.
+
+See [PERFORMANCE_BASELINE.md](PERFORMANCE_BASELINE.md) and
+[PERFORMANCE_RESULTS.md](PERFORMANCE_RESULTS.md). The benchmark is local-only:
+
+```sh
+python3 scripts/benchmark-proxy.py --baseline-ref perf-baseline-20261023
+```
+
+It compiles the checkpoint's original proxy code into a temporary benchmark
+adapter and compares it with the current relay using identical loopback
+workloads. No real profiles, external downloads or system routing changes are used.
+Local benchmark throughput must not be interpreted as Internet speed.
+
+Cloudflare WARP on a provider's server requires its administrator. A VMess link
+alone cannot install or reconfigure that server. Client-side WARP chaining is
+[a separate Xray capability](https://xtls.github.io/en/document/level-2/warp.html)
+requiring a registered WARP/WireGuard profile and a compatible core. This
+performance change preserves the existing Linux 1.6.1 core, and does not add a
+nonfunctional WARP toggle or register an external account.

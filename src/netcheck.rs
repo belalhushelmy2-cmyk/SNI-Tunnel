@@ -31,7 +31,7 @@ pub async fn resolve(host: &str, port: u16) -> Result<DnsReport> {
 
 pub async fn tcp_connect(host: &str, port: u16, timeout: Duration) -> Result<(SocketAddr, u128)> {
     let t = Instant::now();
-    let stream = tokio::time::timeout(timeout, tokio::net::TcpStream::connect((host, port)))
+    let stream = tokio::time::timeout(timeout, crate::dial::connect(host, port, timeout))
         .await
         .with_context(|| format!("TCP connect to {host}:{port} timed out"))
         .context("TCP connect failed")??;
@@ -115,7 +115,7 @@ async fn tls_probe_alpn(
     timeout: Duration,
     alpn: &[&str],
 ) -> Result<TlsReport> {
-    let stream = tokio::time::timeout(timeout, tokio::net::TcpStream::connect((host, port)))
+    let stream = tokio::time::timeout(timeout, crate::dial::connect(host, port, timeout))
         .await
         .context("TLS: TCP connect timed out")?
         .context("TLS: TCP connect failed")?;
@@ -171,7 +171,7 @@ pub async fn tls_probe(
     use rustls::{ClientConfig, RootCertStore};
 
     let name = if sni.trim().is_empty() { host } else { sni };
-    let stream = tokio::time::timeout(timeout, tokio::net::TcpStream::connect((host, port)))
+    let stream = tokio::time::timeout(timeout, crate::dial::connect(host, port, timeout))
         .await
         .context("TLS: TCP connect timed out")?
         .context("TLS: TCP connect failed")?;

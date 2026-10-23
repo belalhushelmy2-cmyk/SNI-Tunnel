@@ -88,12 +88,13 @@ impl Session {
         } else {
             settings.socks_port
         };
-        let proxy = LocalProxy::start(
+        let proxy = LocalProxy::start_with_mode(
             http_port,
             socks_port,
             upstream,
             traffic.clone(),
             logger.clone(),
+            settings.performance_mode,
         )
         .await?;
         // The listeners are only announced when they really accept

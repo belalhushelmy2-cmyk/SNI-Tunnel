@@ -190,6 +190,7 @@ export component AppWindow inherits Window {
     in-out property <bool> tun-mode: false;
     in-out property <bool> kill-switch: true;
     in-out property <bool> netmod-compatibility: false;
+    in-out property <int> performance-mode: 0;
     in-out property <bool> auto-reconnect: true;
     in-out property <string> health-retries: "0";
     in-out property <string> health-protection: "Not verified";
@@ -574,6 +575,10 @@ export component AppWindow inherits Window {
             CheckBox { text: "TUN mode · route the whole device (requires permission)"; checked <=> root.tun-mode; }
             CheckBox { text: "NetMod TAP compatibility test (disconnect NetMod first)"; checked <=> root.netmod-compatibility; enabled: root.platform-windows; }
             CheckBox { text: "Kill switch: block traffic when the tunnel is down"; checked <=> root.kill-switch; }
+            Text { text: "LOCAL PROXY PERFORMANCE"; color: Theme.accent; font-size: 11px; font-weight: 700; }
+            ComboBox { model: ["Balanced", "Low Latency", "Maximum Throughput"]; current-index <=> root.performance-mode; enabled: !root.tun-mode; }
+            Text { text: root.performance-mode == 0 ? "Balanced: standard TCP buffering, 8 KiB relay buffers." : root.performance-mode == 1 ? "Low Latency: TCP_NODELAY on local relay sockets, 8 KiB buffers." : "Maximum Throughput: TCP_NODELAY, 64 KiB buffers per direction (more memory per connection)."; color: Theme.muted; font-size: 11px; wrap: word-wrap; }
+            Text { text: "Applies on the next HTTP/SOCKS proxy connection. TUN keeps its tested datapath. Server, TLS, SNI, MUX, DNS and MTU stay unchanged."; color: Theme.muted; font-size: 11px; wrap: word-wrap; }
             Text { text: "CONNECTION HEALTH"; color: Theme.accent; font-size: 11px; font-weight: 700; }
             CheckBox { text: "Automatic monitoring"; checked <=> root.health-enabled; }
             CheckBox { text: "Auto-reconnect if the core dies or traffic fails"; checked <=> root.auto-reconnect; }

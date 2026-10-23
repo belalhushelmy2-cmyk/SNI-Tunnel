@@ -314,6 +314,8 @@ pub struct Settings {
     pub auto_reconnect: bool,
     #[serde(default)]
     pub health: HealthSettings,
+    #[serde(default)]
+    pub performance_mode: crate::performance::PerformanceMode,
     #[serde(default = "d_true")]
     pub minimize_to_tray: bool,
     #[serde(default)]
@@ -373,6 +375,7 @@ impl Default for Settings {
             mode: d_mode(),
             auto_reconnect: true,
             health: HealthSettings::default(),
+            performance_mode: crate::performance::PerformanceMode::Balanced,
             minimize_to_tray: true,
             start_with_windows: false,
             verify_core_hash: true,

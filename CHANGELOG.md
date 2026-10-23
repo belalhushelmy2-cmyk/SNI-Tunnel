@@ -99,3 +99,16 @@ Publication is pending the workflow's successful final gates at this checkpoint.
   the remote closes after sending it. Forwarding must still verify before VPN.
 - Show discovery-stage progress and errors; classify current-stage failures
   without stale certificate errors from previous connections.
+
+## Desktop performance work (development)
+
+- Coalesce buffered HTTP request headers/body to avoid measured delayed-ACK
+  stalls. Count that forwarded data in upload statistics.
+- Add optional local relay performance modes with bounded 8/64 KiB buffers;
+  preserve the default and all server/security/network preferences.
+- Own accepted proxy tasks and cancel them on stop; release connection counters
+  on cancellation instead of leaving stalled handshakes behind.
+- Stagger dual-stack diagnostic/TLS connections, with four concurrent attempts
+  at most and the original caller deadline. Report DNS + TCP timing honestly.
+- Add local-only checkpoint benchmarks and performance reports. The installed
+  app, active connection, bundled cores and published releases are untouched.

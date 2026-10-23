@@ -1007,6 +1007,8 @@ fn wire_callbacks(
             c.settings.kill_switch = ui.get_kill_switch();
             c.settings.netmod_compatibility = ui.get_netmod_compatibility();
             c.settings.auto_reconnect = ui.get_auto_reconnect();
+            c.settings.performance_mode =
+                crate::performance::PerformanceMode::from_index(ui.get_performance_mode());
             let parse = |text: slint::SharedString, low: u64, high: u64| {
                 text.trim()
                     .parse::<u64>()
@@ -1346,6 +1348,7 @@ fn apply_settings(ui: &AppWindow, cfg: &Arc<Mutex<AppConfig>>) {
     ui.set_kill_switch(c.settings.kill_switch);
     ui.set_netmod_compatibility(c.settings.netmod_compatibility);
     ui.set_auto_reconnect(c.settings.auto_reconnect);
+    ui.set_performance_mode(c.settings.performance_mode.index());
     ui.set_health_enabled(c.settings.health.enabled);
     ui.set_health_notifications(c.settings.health.notifications);
     ui.set_health_interval(c.settings.health.interval().to_string().into());

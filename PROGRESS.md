@@ -1119,3 +1119,18 @@ See android/TEST_RESULTS.md for exact scope and physical-device limitations.
 Release CI also gates Android unit/lint/build checks and validates the locally
 tested, signed APKs against android/release-assets.json before publication.
 Publication is pending the workflow's successful final gates at this checkpoint.
+
+## Measurement-first desktop performance work — 2026-10-23
+
+Created `perf-baseline-20261023` before network edits. Baseline sampled the
+existing tunnel with nine tiny HTTPS requests, DNS/TCP timing and idle CPU/RSS;
+no live profile, MUX, resolver, MTU, routes or core changes. A local-only benchmark
+reproduced ~41 ms POST stalls and lower upload throughput. Coalesced buffered
+HTTP writes, added optional NODELAY/buffer modes, structured proxy-task cleanup,
+accurate buffered upload accounting and bounded dual-stack failover. Settings
+controls are explicitly limited to the local relay; TUN is not falsely tuned.
+139 Rust tests, 21 Python helper tests, Clippy and offline Slint layout checks
+passed locally. Release builds and final benchmark comparison are in progress.
+WARP cannot be installed on the provider from a VMess link. Client chaining
+needs WARP registration/configuration and a compatible core; existing Linux
+core is retained as explicitly required. No nonfunctional toggle was added.

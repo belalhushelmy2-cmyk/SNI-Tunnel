@@ -7,9 +7,9 @@ pub async fn measure(address: &str, port: u16) -> anyhow::Result<u128> {
 }
 pub fn display(reading: Option<u128>) -> String {
     match reading {
-        Some(0) => "TCP latency <1 ms · live / 3 s".into(),
-        Some(ms) => format!("TCP latency {ms} ms · live / 3 s"),
-        None => "TCP latency unavailable · retrying / 3 s".into(),
+        Some(0) => "DNS + TCP latency <1 ms · live / 3 s".into(),
+        Some(ms) => format!("DNS + TCP latency {ms} ms · live / 3 s"),
+        None => "DNS + TCP latency unavailable · retrying / 3 s".into(),
     }
 }
 #[cfg(test)]
