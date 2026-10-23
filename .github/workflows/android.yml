@@ -1,0 +1,35 @@
+name: Android phone and TV
+on:
+  push:
+    paths: ['android/**', '.github/workflows/android.yml']
+  pull_request:
+    paths: ['android/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - run: python3 android/fetch-runtime.py
+      - name: Unit tests, lint and debug APKs
+        working-directory: android
+        run: ./gradlew testPhoneDebugUnitTest testTvDebugUnitTest lintPhoneDebug lintTvDebug assemblePhoneDebug assembleTvDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-phone-and-tv-debug
+          path: |
+            android/app/build/outputs/apk/phone/debug/*.apk
+            android/app/build/outputs/apk/tv/debug/*.apk
+            android/app/build/reports/tests/
+            android/app/build/reports/lint-results-*.html

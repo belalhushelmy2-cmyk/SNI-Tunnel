@@ -241,3 +241,18 @@ were repaired without restarting the running tunnel. Fourteen isolated tests
 passed, including native Arch/DEB transaction selection, retained user data and
 replacement of a hidden launcher. desktop-file-validate passed for the repaired
 local entry. Native package transactions were simulated, not run on the host.
+
+
+## Android phone and TV 1.0.0 — 2026-10-23
+
+Added a separate native Android project with phone and TV flavors, VMess imports,
+independent SNI/Host configuration, Keystore AES-GCM profile storage, foreground
+VpnService, official SHA256-pinned Xray/Hev runtimes, real HTTPS health checks and
+manual disconnect cleanup. Android 10+ / arm64-v8a and x86_64; TV Leanback entry,
+landscape UI and D-pad focus. Signed APKs built locally with a retained private
+key; no secrets committed. Both release lint gates passed; eight unit tests per
+flavor passed. API 35 x86_64 emulator: both installs/launches, import, VPN consent,
+synthetic VMess TCP forwarding, health verification and disconnect passed; TV
+UDP DNS and phone process-restart profile retention passed. Physical devices,
+IPv6/handoff/soak and Play Store distribution remain untested. See
+android/TEST_RESULTS.md for exact scope. Desktop release assets are unchanged.
