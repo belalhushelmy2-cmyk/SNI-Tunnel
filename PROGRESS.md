@@ -1037,3 +1037,9 @@ Published v0.4.1 to https://github.com/belalhushelmy2-cmyk/SNI-Tunnel/releases/t
 - Added nftables/libnotify to native Arch-bin dependency metadata as well as offline bundles.
 - Versioned offline staging avoids selecting stale packages from earlier builds.
 - Superseded push builds are cancelled and publication verifies the current main commit before creating a release.
+
+### Completed — published v2.1.0
+- Final Actions run 39961207877 passed Linux/Windows regressions, real Linux namespace packet enforcement, real Windows WFP fallback/recovery, installers, AppImage, native Arch-bin and both signed/authenticated offline dependency bundles.
+- Published https://github.com/belalhushelmy2-cmyk/SNI-Tunnel/releases/tag/v2.1.0 as Latest with 16 assets.
+- Downloaded SHA256SUMS and matched every listed asset digest against GitHub metadata. Previous tags/releases were not modified.
+- Local build outputs and verification records are in ../outputs/v2/2.1.0/. Real-profile multi-hour/hardware soak testing remains explicitly unclaimed.

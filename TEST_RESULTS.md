@@ -1,5 +1,8 @@
 # 2.1.0 validation
 
+**Published and verified:** [v2.1.0](https://github.com/belalhushelmy2-cmyk/SNI-Tunnel/releases/tag/v2.1.0).
+Final [Actions run 39961207877](https://github.com/belalhushelmy2-cmyk/SNI-Tunnel/actions/runs/39961207877) passed every required job, including native Windows WFP enforcement/recovery, isolated Linux IPv4/IPv6 packet tests, EXE version/payload, DEB payload, AppImage smoke tests and Arch/Ubuntu offline bundles. All 16 release assets are present; the published SHA256SUMS matches GitHub's per-asset digests.
+
 Executed locally on Linux:
 - Rust: 129 tests passed (118 library + 11 integration); 5 existing live/opt-in tests ignored.
 - Python Linux regression suite: 22 tests passed; offline installer regression: 1 test passed.
