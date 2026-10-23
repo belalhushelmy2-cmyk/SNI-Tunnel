@@ -117,6 +117,87 @@ def extract(archive, destination):
     return payload
 
 
+def existing_installation(selected, home):
+    if selected == 'pacman':
+        for name in ('sni-tunnel-v2-bin', 'sni-tunnel-v2'):
+            result = subprocess.run(['pacman', '-Q', name], capture_output=True, text=True)
+            if result.returncode == 0:
+                return {'kind': 'pacman', 'path': '/usr/bin/sni-tunnel-v2', 'label': result.stdout.strip()}
+    if selected == 'apt-get':
+        result = subprocess.run(['dpkg-query', '-W', '-f=${Status} ${Version}', 'sni-tunnel-v2'], capture_output=True, text=True)
+        if result.returncode == 0 and result.stdout.startswith('install ok installed '):
+            return {'kind': 'apt-get', 'path': '/usr/bin/sni-tunnel-v2', 'label': result.stdout.strip()}
+    for directory, command in (('/usr/lib/sni-tunnel-v2', '/usr/bin/sni-tunnel-v2'), ('/usr/lib/sni-tunnel', '/usr/bin/sni-tunnel')):
+        if (Path(directory) / 'start.sh').is_file():
+            # Never overwrite files owned by an unrecognized native package.
+            owner = None
+            if selected == 'pacman':
+                owner = ['pacman', '-Qo', directory + '/start.sh']
+            elif selected == 'apt-get':
+                owner = ['dpkg-query', '-S', directory + '/start.sh']
+            elif shutil.which('rpm'):
+                owner = ['rpm', '-qf', directory + '/start.sh']
+            if owner and subprocess.run(owner, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+                raise RuntimeError('Existing installation belongs to another package; update it with its package manager.')
+            return {'kind': 'system', 'directory': directory, 'path': command, 'label': directory}
+    return {'kind': 'user', 'path': str(home / '.local/opt/sni-tunnel-v2/current/sni-tunnel'), 'label': 'user installation'}
+
+
+def asset_for_target(tag, assets, target, fallback):
+    if target['kind'] == 'pacman':
+        matches = [n for n in assets if re.fullmatch(r'sni-tunnel-v2-bin-' + re.escape(tag[1:]) + r'-[0-9]+-x86_64\.pkg\.tar\.zst', n)]
+        if len(matches) != 1:
+            raise RuntimeError('Release has no unique matching Arch package.')
+        name = matches[0]
+    elif target['kind'] == 'apt-get':
+        name = 'sni-tunnel-v2_' + tag[1:] + '_amd64.deb'
+    else:
+        name = fallback
+    expected = 'https://github.com/' + REPO + '/releases/download/' + tag + '/' + name
+    if name not in assets or assets[name].get('browser_download_url') != expected:
+        raise RuntimeError('Release missing the required install/update asset: ' + name)
+    return name
+
+
+def register_desktop(home, launcher, icon):
+    applications = Path(os.environ.get('XDG_DATA_HOME', str(home / '.local/share'))) / 'applications'
+    entry = '[Desktop Entry]\nType=Application\nName=SNI Tunnel\nComment=VMess tunnel with independent TLS SNI\nExec=' + desktop_quote(launcher) + '\nTryExec=' + str(launcher) + '\nIcon=' + str(icon) + '\nTerminal=false\nCategories=Network;\nKeywords=sni;tunnel;vpn;vmess;\nStartupNotify=true\n'
+    atomic_text(applications / 'sni-tunnel.desktop', entry)
+    # Replace the old Hidden=true override and consolidate previous installer IDs.
+    for name in ('sni-tunnel-v2-online.desktop', 'sni-tunnel-v2.desktop'):
+        path = applications / name
+        if path.exists() or (Path('/usr/share/applications') / name).exists():
+            atomic_text(path, '[Desktop Entry]\nType=Application\nName=SNI Tunnel (previous launcher)\nHidden=true\n')
+    if shutil.which('update-desktop-database'):
+        subprocess.run(['update-desktop-database', str(applications)], check=True)
+
+
+def update_system(payload, directory):
+    # Fixed allowed install locations; package-owned paths were rejected earlier.
+    if directory not in ('/usr/lib/sni-tunnel', '/usr/lib/sni-tunnel-v2'):
+        raise RuntimeError('Unexpected system installation directory.')
+    code = """
+import os, shutil, sys, tempfile, time
+from pathlib import Path
+source, target = Path(sys.argv[1]), Path(sys.argv[2])
+assert str(target) in ('/usr/lib/sni-tunnel', '/usr/lib/sni-tunnel-v2')
+stage = Path(tempfile.mkdtemp(prefix='.sni-update-', dir=str(target.parent)))
+backup = target.with_name(target.name + '.backup-' + str(time.time_ns()))
+try:
+    shutil.copytree(source, stage / 'app')
+    os.rename(target, backup)
+    try:
+        os.rename(stage / 'app', target)
+    except BaseException:
+        os.rename(backup, target)
+        raise
+finally:
+    shutil.rmtree(stage)
+print('Previous installation retained at ' + str(backup))
+"""
+    subprocess.run(['sudo', 'python3', '-c', code, str(payload), directory], check=True)
+
+
 def ensure_stopped():
     # An open session must release its routes/kill switch before replacement.
     for entry in Path('/proc').iterdir():
@@ -154,6 +235,7 @@ def desktop_quote(value):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--target', choices=('auto', 'user'), default='auto', help='auto updates an existing native/system install; user explicitly chooses a separate user install')
     parser.add_argument('--no-deps', action='store_true', help='skip package-manager changes; provide required runtime packages yourself')
     parser.add_argument('--check', action='store_true', help='show compatibility, latest release and dependency commands without changes')
     parser.add_argument('--uninstall', action='store_true', help='remove this user installation only; retain profiles')
@@ -171,6 +253,15 @@ def main():
         if launcher.is_file() and 'SNI online installer' in launcher.read_text():
             launcher.unlink()
         desktop.unlink(missing_ok=True)
+        canonical = desktop.with_name('sni-tunnel.desktop')
+        if canonical.is_file() and str(launcher) in canonical.read_text():
+            canonical.unlink()
+        for previous in ('sni-tunnel-v2.desktop', 'sni-tunnel-v2-online.desktop'):
+            old = desktop.with_name(previous)
+            if old.is_file() and 'Name=SNI Tunnel (previous launcher)' in old.read_text():
+                old.unlink()
+        if shutil.which('update-desktop-database'):
+            subprocess.run(['update-desktop-database', str(desktop.parent)], check=True)
         print('Removed online installation. Saved profiles and package-manager installations retained.')
         return
     compatible()
@@ -181,17 +272,21 @@ def main():
     selected = manager()
     if not selected and not args.no_deps:
         raise RuntimeError('No supported package manager detected. Install dependencies listed in INSTALL.md and rerun with --no-deps.')
+    target = existing_installation(selected, home) if args.target == 'auto' else {'kind': 'user', 'path': str(root / 'current/sni-tunnel'), 'label': 'explicit user installation'}
+    print('Install/update target: ' + target['label'], flush=True)
     with tempfile.TemporaryDirectory(prefix='sni-install-') as temp:
         temp = Path(temp)
         download(API, temp / 'release.json')
         tag, name, assets = release_info(json.loads((temp / 'release.json').read_text()))
+        name = asset_for_target(tag, assets, target, name)
         print('Latest stable release: ' + tag, flush=True)
         commands = dependency_commands(selected) if selected and not args.no_deps else []
         if args.check:
             print('Compatible Linux x86_64 / glibc platform.')
             for command in commands:
                 print('Dependencies: sudo ' + shlex.join(command))
-            print('Install location: ' + str(root))
+            print('Install location: ' + (target.get('directory') or target['path']))
+            print('Artifact: ' + name)
             return
         # Lock before package operations or changing the installation.
         root.mkdir(parents=True, exist_ok=True)
@@ -205,12 +300,34 @@ def main():
             download(assets['SHA256SUMS']['browser_download_url'], temp / 'SHA256SUMS')
             download(assets[name]['browser_download_url'], temp / name)
             verify(temp / name, temp / 'SHA256SUMS', name)
-            payload = extract(temp / name, temp / 'extracted')
+            payload = extract(temp / name, temp / 'extracted') if target['kind'] in ('user', 'system') else None
             if not args.no_deps:
                 if not shutil.which('sudo'):
                     raise RuntimeError('sudo is required to install runtime dependencies. Install them separately and use --no-deps.')
                 for command in commands:
                     subprocess.run(['sudo', *command], check=True)
+            ensure_stopped()
+            if target['kind'] != 'user':
+                if not shutil.which('sudo'):
+                    raise RuntimeError('sudo is required to update the existing system installation.')
+                if target['kind'] == 'pacman':
+                    subprocess.run(['sudo', 'pacman', '-U', str(temp / name)], check=True)
+                elif target['kind'] == 'apt-get':
+                    temp.chmod(0o755)
+                    (temp / name).chmod(0o644)
+                    subprocess.run(['sudo', 'apt-get', 'install', str(temp / name)], check=True)
+                else:
+                    subprocess.run([str(payload / 'sni-tunnel'), '--help'], check=True, stdout=subprocess.DEVNULL, timeout=15)
+                    update_system(payload, target['directory'])
+                atomic_text(root / 'installer.py', Path(__file__).read_text())
+                wrapper = '#!/bin/sh\n# SNI online installer\n'
+                wrapper += 'if [ "${1:-}" = update ]; then shift; exec python3 ' + shlex.quote(str(root / 'installer.py')) + ' "$@"; fi\n'
+                wrapper += 'exec ' + shlex.quote(target['path']) + ' "$@"\n'
+                atomic_text(launcher, wrapper, 0o755)
+                icon = Path(target.get('directory', '/usr/lib/sni-tunnel-v2')) / 'icon.png'
+                register_desktop(home, launcher, icon)
+                print('Updated existing installation to ' + tag + '. Open SNI Tunnel from the app launcher.')
+                return
             # Execute only the verified downloaded CLI, never start networking.
             subprocess.run([str(payload / 'sni-tunnel'), '--help'], check=True, stdout=subprocess.DEVNULL, timeout=15)
             # Fresh immutable version directory, atomic current symlink switch.
@@ -231,7 +348,7 @@ def main():
             wrapper += 'export SLINT_SCALE_FACTOR="${SLINT_SCALE_FACTOR:-1}"\n'
             wrapper += 'exec ' + shlex.quote(str(root / 'current/sni-tunnel')) + ' "$@"\n'
             atomic_text(launcher, wrapper, 0o755)
-            atomic_text(desktop, '[Desktop Entry]\nType=Application\nName=SNI Tunnel V2 (online)\nExec=' + desktop_quote(launcher) + '\nIcon=' + str(root / 'current/icon.png') + '\nTerminal=false\nCategories=Network;\n')
+            register_desktop(home, launcher, root / 'current/icon.png')
             print('Installed ' + tag + '. Launch: ' + shlex.quote(str(launcher)))
             print('Update: ' + shlex.quote(str(launcher)) + ' update')
             print('If ~/.local/bin is on PATH, use: sni-tunnel-v2')

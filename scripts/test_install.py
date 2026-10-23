@@ -43,13 +43,14 @@ class InstallerTests(unittest.TestCase):
         else:
             dest.write_bytes(self.archive.read_bytes())
 
-    def run_main(self, *args, download=None):
+    def run_main(self, *args, download=None, target=None):
         with contextlib.ExitStack() as stack:
             stack.enter_context(patch.object(i.Path, 'home', return_value=self.home))
             stack.enter_context(patch.dict(os.environ, {'XDG_DATA_HOME': str(self.home / '.local/share')}))
             stack.enter_context(patch.object(i.os, 'geteuid', return_value=1000))
             stack.enter_context(patch.object(i, 'compatible'))
             stack.enter_context(patch.object(i, 'ensure_stopped'))
+            stack.enter_context(patch.object(i, 'existing_installation', return_value=target or {'kind':'user','path':str(self.home / '.local/opt/sni-tunnel-v2/current/sni-tunnel'),'label':'test user install'}))
             stack.enter_context(patch.object(i, 'manager', return_value='pacman'))
             stack.enter_context(patch.object(i, 'download', side_effect=download or self.download))
             stack.enter_context(patch('sys.argv', ['install.py', *args]))
@@ -74,6 +75,58 @@ class InstallerTests(unittest.TestCase):
         self.assertFalse(current.exists())
         self.assertFalse(launcher.exists())
         self.assertTrue(profile.exists())
+
+    def test_arch_updates_existing_package_without_user_payload(self):
+        name = 'sni-tunnel-v2-bin-2.1.0-1-x86_64.pkg.tar.zst'
+        url = 'https://github.com/' + i.REPO + '/releases/download/v2.1.0/' + name
+        self.release['assets'].append({'name':name,'browser_download_url':url})
+        original = self.name
+        def package_download(url, dest):
+            if url.endswith('/SHA256SUMS'):
+                dest.write_text(self.digest + '  ' + name + '\n')
+            else:
+                self.download(url,dest)
+        target = {'kind':'pacman','path':'/usr/bin/sni-tunnel-v2','label':'existing Arch package'}
+        with patch.object(i.shutil, 'which', return_value='/usr/bin/sudo'), patch.object(i.subprocess,'run') as run:
+            self.run_main('--no-deps', target=target, download=package_download)
+            transactions = [c.args[0] for c in run.call_args_list if c.args[0][:3] == ['sudo','pacman','-U']]
+            self.assertEqual(len(transactions),1)
+            self.assertTrue(transactions[0][-1].endswith(name))
+        root=self.home/'.local/opt/sni-tunnel-v2'
+        self.assertFalse((root/'current').exists())
+        self.assertIn('/usr/bin/sni-tunnel-v2',(self.home/'.local/bin/sni-tunnel-v2').read_text())
+
+    def test_deb_updates_existing_package(self):
+        name='sni-tunnel-v2_2.1.0_amd64.deb'
+        self.release['assets'].append({'name':name,'browser_download_url':'https://github.com/'+i.REPO+'/releases/download/v2.1.0/'+name})
+        def package_download(url,dest):
+            if url.endswith('/SHA256SUMS'):
+                dest.write_text(self.digest+'  '+name+'\n')
+            else:
+                self.download(url,dest)
+        with patch.object(i.shutil,'which',return_value='/usr/bin/sudo'),patch.object(i.subprocess,'run') as run:
+            self.run_main('--no-deps',target={'kind':'apt-get','path':'/usr/bin/sni-tunnel-v2','label':'existing DEB'},download=package_download)
+            self.assertTrue(any(c.args[0][:3]==['sudo','apt-get','install'] for c in run.call_args_list))
+        self.assertFalse((self.home/'.local/opt/sni-tunnel-v2/current').exists())
+
+    def test_native_package_detection(self):
+        with patch.object(i.subprocess,'run',return_value=subprocess.CompletedProcess([],0,'sni-tunnel-v2-bin 2.0.1-1\n','')):
+            self.assertEqual(i.existing_installation('pacman',self.home)['kind'],'pacman')
+        with patch.object(i.subprocess,'run',return_value=subprocess.CompletedProcess([],0,'install ok installed 2.0.1','')):
+            self.assertEqual(i.existing_installation('apt-get',self.home)['kind'],'apt-get')
+
+    def test_launcher_replaces_hidden_override(self):
+        appdir=self.home/'.local/share/applications'
+        appdir.mkdir(parents=True)
+        (appdir/'sni-tunnel.desktop').write_text('[Desktop Entry]\nHidden=true\n')
+        (appdir/'sni-tunnel-v2-online.desktop').write_text('[Desktop Entry]\nName=Old entry\n')
+        self.run_main('--no-deps')
+        desktop=(appdir/'sni-tunnel.desktop').read_text()
+        self.assertIn('Name=SNI Tunnel\n',desktop)
+        self.assertNotIn('Hidden=true',desktop)
+        self.assertNotIn('NoDisplay=true',desktop)
+        self.assertEqual((appdir/'sni-tunnel.desktop').stat().st_mode & 0o777,0o644)
+        self.assertIn('Hidden=true',(appdir/'sni-tunnel-v2-online.desktop').read_text())
 
     def test_failed_update_retains_selected_version(self):
         self.run_main('--no-deps')

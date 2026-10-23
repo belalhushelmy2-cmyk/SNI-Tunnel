@@ -7,9 +7,13 @@ curl -fsSL https://raw.githubusercontent.com/belalhushelmy2-cmyk/SNI-Tunnel/main
 ```
 
 The same command installs or updates to the **latest stable GitHub release**.
-It downloads the Linux archive and SHA256SUMS from that release, verifies the
-archive before execution, installs runtime dependencies using your own distro's
-repositories, then installs the app under `~/.local/opt/sni-tunnel-v2`.
+It detects an existing Arch/DEB package and updates it using `pacman -U` or
+`apt-get install` with the matching verified release package. An older manual
+installation under `/usr/lib/sni-tunnel` or `/usr/lib/sni-tunnel-v2` is updated
+in place with a backup, provided no package owns it. If neither exists, it
+installs or updates the user installation under `~/.local/opt/sni-tunnel-v2`.
+Downloads are checked against the release SHA256SUMS before installation.
+Runtime dependencies come from your own distro repositories.
 Package transactions request sudo and display their normal confirmation prompt.
 Arch uses `pacman -Syu` to avoid a partial system upgrade; review that transaction.
 No Rust compiler, Cargo, FUSE or Git checkout is needed.
@@ -18,13 +22,13 @@ Prerequisites: `curl`, CA certificates, Python 3.8+, Bash, sudo for dependency
 installation, and a normal Linux desktop session. Disconnect and quit SNI Tunnel
 before updating. The installer refuses to replace a running app.
 
-Launch it from the application menu as **SNI Tunnel V2 (online)**, or run:
+Launch it from the application menu as **SNI Tunnel**, or run:
 
 ```bash
 ~/.local/bin/sni-tunnel-v2
 ```
 
-Update an installation made by this installer:
+Update the detected installation using the saved updater:
 
 ```bash
 ~/.local/bin/sni-tunnel-v2 update
@@ -32,11 +36,17 @@ Update an installation made by this installer:
 
 If `~/.local/bin` is on PATH, these are also `sni-tunnel-v2` and
 `sni-tunnel-v2 update`. Re-running the repository command also obtains the newest
-installer logic. Updates retain previous app directories and atomically switch
+installer logic. User updates retain previous app directories and atomically switch
 the current app; download/checksum/extraction failures leave the previous app
-selected. Saved servers, keys and settings remain in the existing V2 data store.
-An existing DEB/Arch installation is retained; launch the **online** menu entry to
-use this installation. It does not modify package-manager ownership records.
+selected. Native packages use their package manager transaction behavior. Saved servers, keys and settings remain in the existing V2 data store.
+Existing DEB/Arch installations are updated through their package manager;
+package-owned files are never replaced by an unmanaged copy. The user command
+forwards to that updated system installation. Earlier duplicate menu entries are
+consolidated into one visible `SNI Tunnel` entry, including replacement of a stale
+`Hidden=true` override, and the desktop application database is refreshed.
+Use `--target user` only if you explicitly want a separate user installation.
+Arbitrary AppImages outside these known locations require a separate manual
+update; the installer does not scan your disk or replace unrelated files.
 Desktop-session autostart configured with an older installation may need to be
 turned off and on from the online app's settings.
 

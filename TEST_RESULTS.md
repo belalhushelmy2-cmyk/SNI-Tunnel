@@ -227,3 +227,17 @@ with --help successfully. No host packages, user installation, routes or profile
 were modified by that smoke check. Package-manager transactions on all mapped
 distributions remain unexecuted; mappings are not an all-distro validation claim.
 A focused installer CI workflow is included for subsequent changes.
+
+
+## Existing-installation and launcher correction — 2026-10-23
+
+Default target detection now updates installed Arch/DEB packages through the
+package manager, and recognized unowned /usr/lib manual installations in place
+with a backup. User installs remain the fallback; --target user explicitly opts
+into a separate installation. Canonical sni-tunnel.desktop replaces stale hidden
+overrides, previous installer IDs are hidden to avoid duplicates, desktop database
+is refreshed, and launcher permissions are 0644. The local user launcher/updater
+were repaired without restarting the running tunnel. Fourteen isolated tests
+passed, including native Arch/DEB transaction selection, retained user data and
+replacement of a hidden launcher. desktop-file-validate passed for the repaired
+local entry. Native package transactions were simulated, not run on the host.
