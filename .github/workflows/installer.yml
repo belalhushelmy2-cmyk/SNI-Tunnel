@@ -1,0 +1,27 @@
+name: Linux terminal installer
+on:
+  push:
+    paths:
+      - install.sh
+      - scripts/install.py
+      - scripts/test_install.py
+      - .github/workflows/installer.yml
+  pull_request:
+    paths:
+      - install.sh
+      - scripts/install.py
+      - scripts/test_install.py
+      - .github/workflows/installer.yml
+permissions:
+  contents: read
+jobs:
+  installer:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Bootstrap syntax
+        run: bash -n install.sh
+      - name: Isolated installer and update regressions
+        run: python3 -m unittest discover -s scripts -p test_install.py -v

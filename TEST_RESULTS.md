@@ -207,3 +207,23 @@ the last profile's source index (4 instead of 0). Removed root visibility and
 filtered the model in Rust. All five Use buttons are tested independently, in
 normal and compact layouts at 100% and 150% scale. Filtering and sorting tests
 retain original source indices for row actions. Profiles are not rewritten.
+
+
+## Online Linux installer validation — 2026-10-23
+
+Added install.sh and scripts/install.py to install/update the latest stable GitHub
+Linux archive. Per-user version directories, checksum validation, safe archive
+extraction, atomic current selection, process/installer guards and retained
+profiles/previous versions. Dependency mappings: apt, pacman (full upgrade), dnf,
+zypper and glibc Void/xbps; other compatible glibc systems can use --no-deps.
+Unsupported architectures, musl, old glibc and missing standard ELF loader fail
+before installation. This is installer tooling for existing release assets; no
+new app version or replacement of published release assets is needed.
+
+Validation: 10 isolated installer regressions passed; Bash syntax and Python 3.8
+syntax checks passed. Actual published v2.1.0 Linux archive downloaded over HTTPS,
+verified against release SHA256SUMS, installed to a temporary home and launched
+with --help successfully. No host packages, user installation, routes or profiles
+were modified by that smoke check. Package-manager transactions on all mapped
+distributions remain unexecuted; mappings are not an all-distro validation claim.
+A focused installer CI workflow is included for subsequent changes.

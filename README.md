@@ -1,3 +1,15 @@
+## Install or update on Linux
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/belalhushelmy2-cmyk/SNI-Tunnel/main/install.sh -o "$HOME/sni-tunnel-install.sh" && bash "$HOME/sni-tunnel-install.sh"
+```
+
+Run without sudo; dependency installation requests it when needed. Launch with
+`~/.local/bin/sni-tunnel-v2`; update with `~/.local/bin/sni-tunnel-v2 update`.
+Supports Linux x86_64/glibc >=2.30 with dependency mappings for apt, pacman, dnf,
+zypper and xbps. See [terminal installation](INSTALL.md) for prerequisites,
+other distributions, checks and removal.
+
 ## 2.0.2 offline desktop release
 
 Choose the **Arch/Omarchy** or **Ubuntu 24.04** `offline.bin` installer for bundled runtime dependencies. Run it as your normal desktop user; it requests administrator authorization for installation. Both offline bundles also include the AppImage and portable files. Native Arch `-bin`, DEB, AppImage, portable Linux tar, Windows installer and Windows portable ZIP are also produced. See [offline packaging](packaging/offline/README.md) for prerequisites and build details. Android is not included.
