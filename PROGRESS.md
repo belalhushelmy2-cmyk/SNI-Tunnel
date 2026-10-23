@@ -1146,3 +1146,9 @@ Preparing versioned Linux/Windows packages from the installed performance code.
 The existing installer URL and release lookup are unchanged. Release publication
 is gated on desktop, Arch and Android CI; unchanged signed Android 1.0.3 APKs
 are carried forward with pinned SHA-256 checks.
+
+2.1.2 publication completed: all Linux, Windows, Arch and Android gates passed
+in Actions run 40011966047. GitHub Latest resolves to v2.1.2 and contains the
+versioned Linux installer archive and matching SHA-256 manifest. Check-only
+execution of the unchanged install.sh URL selects this release and the existing
+user installation. The active local app was not restarted during publication.
