@@ -1,4 +1,4 @@
-# SNI Tunnel for Android and Android TV 1.0.2
+# SNI Tunnel for Android and Android TV 1.0.3
 
 Two native Android apps share a VpnService, encrypted profile store and pinned
 network runtimes. Both flavors use Overview, Servers, SNI profiles, Activity, Settings and
@@ -34,6 +34,10 @@ by that server without verifying its identity, matching desktop behavior. It
 is off by default; imported `allowInsecure` preferences are preserved. Xray uses
 a temporary certificate pin discovered for each connection/recovery attempt;
 it is never saved as a trusted pin. An explicit trusted pin takes precedence.
+Discovery makes at most three attempts (one normal, then two with TLS 1.2),
+each limited to at most 10 seconds. If TLS 1.2 discovery succeeds, that session's
+Xray connection also uses TLS 1.2. Activity names this stage and records retries;
+failed discovery never starts the device VPN.
 The phone menu and drawer respect status-bar, camera-cutout and keyboard insets. No VLESS, REALITY, subscription fetching or QR scanner is included.
 
 The VPN captures IPv4/IPv6 and sends TCP/UDP through Hev's SOCKS5 forwarder to
@@ -79,7 +83,7 @@ That script creates a private signing key under the git-ignored
 that directory securely**: Android updates must be signed by the same key.
 Never commit it. To use an external key, set `SNI_ANDROID_KEYSTORE` and
 `SNI_ANDROID_STORE_PASSWORD` (alias `sni-tunnel`). Future builds must increment
-versionCode when changing the released app. Version 1.0.2 uses versionCode 3 and the same retained key as 1.0.0. Versions
+versionCode when changing the released app. Version 1.0.3 uses versionCode 4 and the same retained key as 1.0.0. Versions
 are independent of the 2.x desktop app. No Play Store publication is implied.
 
 Pinned components (SHA256 checked by fetch-runtime.py):

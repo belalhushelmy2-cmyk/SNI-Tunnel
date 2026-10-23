@@ -80,6 +80,7 @@ public final class Profile {
     }
     private static JSONObject tlsOptions(JSONObject profile,String sni)throws Exception {
         JSONObject options=new JSONObject().put("serverName",sni);
+        if(profile.optBoolean("_sessionTls12",false))options.put("minVersion","1.2").put("maxVersion","1.2");
         String pin=profile.optString("pinnedPeerCertSha256","").trim();
         String verifyName=profile.optString("verifyPeerCertByName","").trim();
         if(!pin.isEmpty()) {
@@ -90,6 +91,7 @@ public final class Profile {
         String alpn=profile.optString("alpn","").trim();
         if(!alpn.isEmpty()){JSONArray names=new JSONArray();for(String name:alpn.split(","))if(!name.trim().isEmpty())names.put(name.trim());options.put("alpn",names);}
         String fingerprint=profile.optString("fp","").trim();if(!fingerprint.isEmpty())options.put("fingerprint",fingerprint);
+        if(profile.optBoolean("_sessionTls12",false))options.put("fingerprint","unsafe"); // Native Go TLS honors version bounds; browser presets override them.
         if(profile.optBoolean("allowInsecure",false)&&pin.isEmpty())throw new Exception("Allow insecure certificate discovery has not completed.");
         return options;
     }

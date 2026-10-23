@@ -1,3 +1,23 @@
+# Android 1.0.3 validation — 2026-10-23
+
+- Signed release phone/TV builds succeeded; 24 Java tests per flavor passed
+  (48 executions), zero lint errors. Signing identities match 1.0.2; versionCode 4.
+- Regression tests cover bounded discovery retries, TLS 1.2 fallback propagation
+  into Xray configuration, no saved-profile mutation, strict/explicit-pin bypass,
+  failure without creating a pin, and current-stage error classification.
+- API 35 emulator phone and TV: a controlled frontend rejects every ClientHello that
+  offers TLS 1.3. Normal discovery is rejected, TLS 1.2 discovery succeeds,
+  and Xray's native TLS 1.2 path then verifies HTTPS and forwards an ordinary
+  Android shell HTTP request through VMess/WebSocket/TLS. Disconnect passed.
+- The controlled test caught browser-fingerprint handshakes continuing to offer
+  TLS 1.3 despite protocol limits. TLS 1.2 fallback now selects native TLS with
+  the session pin; normal configured fingerprints are unchanged.
+
+Physical device/network behavior and real-user VMess forwarding remain unverified.
+No real server credentials or real-profile diagnostics are included in artifacts.
+
+## Previous validation
+
 # Android 1.0.2 validation — 2026-10-23
 
 - Signed phone/TV release builds succeeded; 19 JVM tests per flavor passed

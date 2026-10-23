@@ -89,3 +89,13 @@ Publication is pending the workflow's successful final gates at this checkpoint.
   unauthenticated session-certificate discovery. Explicit trusted pins take precedence.
 - Phone header and drawer now respect system bars and camera cutouts.
 - Retained signing identity; versionCode 3 supports updates over 1.0.1.
+
+## Android 1.0.3
+
+- Retry insecure TLS certificate discovery, with two TLS 1.2 fallback attempts.
+- Keep a successful TLS 1.2 fallback on Xray's native TLS path, which honors
+  protocol limits; browser fingerprints are unchanged on normal connections.
+- Retain any presented leaf certificate for the explicit insecure session if
+  the remote closes after sending it. Forwarding must still verify before VPN.
+- Show discovery-stage progress and errors; classify current-stage failures
+  without stale certificate errors from previous connections.

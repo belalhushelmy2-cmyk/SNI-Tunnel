@@ -35,7 +35,7 @@ public final class TunnelService extends VpnService {
         if(intent!=null&&"STOP".equals(intent.getAction())){stopping=true;worker.execute(()->finish("Disconnected"));return START_NOT_STICKY;}
         if(intent!=null&&"RECONNECT".equals(intent.getAction())&&active){worker.execute(()->recover(true));return START_NOT_STICKY;}
         if(active)return START_NOT_STICKY;
-        stopping=false;active=true;verified=false;recoveryExhausted=false;settings=new AppSettings(this);update("Preparing connection…");
+        Events.beginAttempt();stopping=false;active=true;verified=false;recoveryExhausted=false;settings=new AppSettings(this);update("Preparing connection…");
         try{foreground();}catch(Exception e){finish("Foreground service failed: "+Events.clean(e.getMessage()));return START_NOT_STICKY;}
         worker.execute(this::connect);return START_NOT_STICKY;
     }
@@ -67,9 +67,12 @@ public final class TunnelService extends VpnService {
         }catch(Exception|LinkageError error){Events.add("Startup: "+error.getClass().getSimpleName()+": "+error.getMessage());finish("Connection failed · "+Events.hint());}
     }
     private void startCore()throws Exception{
-        config=new File(getFilesDir(),"active-xray.json");Profile runtime=CertificatePin.prepare(profile,settings.timeout());
+        config=new File(getFilesDir(),"active-xray.json");if(profile.value.optString("tls").equals("tls")&&profile.value.optBoolean("allowInsecure",false)&&profile.value.optString("pinnedPeerCertSha256").trim().isEmpty()){update("Discovering server TLS certificate…");foreground();}
+        Profile runtime=CertificatePin.prepare(profile,settings.timeout());
         if(profile.value.optBoolean("allowInsecure",false))Events.add("Allow insecure enabled: server identity is not authenticated.");
         write(config,runtime.config(port).toString());
+        Events.beginAttempt(); // Keep history, but classify subsequent failures from the core stage only.
+        if(runtime.value.optBoolean("_sessionTls12",false))Events.add("TLS 1.2 compatibility: core uses native TLS with the discovered session pin.");
         File executable=new File(getApplicationInfo().nativeLibraryDir,"libxray.so");
         if(!executable.canExecute())throw new Exception("Bundled core is not executable on this device");
         core=new ProcessBuilder(executable.getAbsolutePath(),"run","-config",config.getAbsolutePath()).redirectErrorStream(true).start();
@@ -112,7 +115,7 @@ public final class TunnelService extends VpnService {
         if(tun==null){finish("Disconnected; press Connect to retry");return;}
         verified=false;
         for(int attempt=1;attempt<=3&&!stopping;attempt++){
-            retries=attempt;update("Reconnecting · attempt "+attempt+"/3; VPN retained");foreground();
+            Events.beginAttempt();retries=attempt;update("Reconnecting · attempt "+attempt+"/3; VPN retained");foreground();
             try{
                 stopDatapath();
                 if(manual)profile=settings.apply(new ProfileStore(this).current());
