@@ -16,7 +16,7 @@ public final class Profile {
         if (address.isEmpty() || address.contains("\n") || address.contains("/")) throw new Exception("Missing or invalid server address");
         int port = value.optInt("port", 0);
         if (port < 1 || port > 65535) throw new Exception("Server port must be 1–65535");
-        UUID.fromString(value.getString("id"));
+        if (!UUID.fromString(value.getString("id")).toString().equalsIgnoreCase(value.getString("id"))) throw new Exception("Invalid VMess UUID");
         String transport = value.optString("net", "tcp");
         if (!transport.equals("tcp") && !transport.equals("ws") && !transport.equals("grpc")) throw new Exception("Supported transports: TCP, WebSocket and gRPC");
         if (value.optInt("aid",0) != 0) throw new Exception("Legacy alterId must be zero");
@@ -65,12 +65,29 @@ public final class Profile {
             String sni=v.optString("sni");
             if (sni.isEmpty()) sni=v.optString("host");
             if (sni.isEmpty()) sni=v.getString("add");
-            stream.put("security","tls").put("tlsSettings",new JSONObject().put("serverName",sni));
+            stream.put("security","tls").put("tlsSettings",tlsOptions(v,sni));
         }
         if (net.equals("ws")) stream.put("wsSettings",new JSONObject().put("path",v.optString("path","/")).put("host",v.optString("host")));
         if (net.equals("grpc")) stream.put("grpcSettings",new JSONObject().put("serviceName",v.optString("path")));
         JSONObject outbound = new JSONObject().put("protocol","vmess").put("settings",new JSONObject().put("vnext",new JSONArray().put(node))).put("streamSettings",stream);
+        if(v.optBoolean("mux",false))outbound.put("mux",new JSONObject().put("enabled",true).put("concurrency",8));
         JSONObject inbound = new JSONObject().put("listen","127.0.0.1").put("port",port).put("protocol","socks").put("settings",new JSONObject().put("auth","noauth").put("udp",true));
-        return new JSONObject().put("log",new JSONObject().put("loglevel","none")).put("inbounds",new JSONArray().put(inbound)).put("outbounds",new JSONArray().put(outbound));
+        return new JSONObject().put("log",new JSONObject().put("loglevel","warning")).put("inbounds",new JSONArray().put(inbound)).put("outbounds",new JSONArray().put(outbound));
     }
+    private static JSONObject tlsOptions(JSONObject profile,String sni)throws Exception {
+        JSONObject options=new JSONObject().put("serverName",sni);
+        String pin=profile.optString("pinnedPeerCertSha256","").trim();
+        String verifyName=profile.optString("verifyPeerCertByName","").trim();
+        if(!pin.isEmpty()) {
+            if(!pin.matches("(?i)[0-9a-f]{64}"))throw new Exception("Certificate pin must be 64 hexadecimal characters");
+            options.put("pinnedPeerCertSha256",pin);
+        }
+        if(!verifyName.isEmpty())options.put("verifyPeerCertByName",verifyName);
+        String alpn=profile.optString("alpn","").trim();
+        if(!alpn.isEmpty()){JSONArray names=new JSONArray();for(String name:alpn.split(","))if(!name.trim().isEmpty())names.put(name.trim());options.put("alpn",names);}
+        String fingerprint=profile.optString("fp","").trim();if(!fingerprint.isEmpty())options.put("fingerprint",fingerprint);
+        if(profile.optBoolean("allowInsecure",false)&&pin.isEmpty())throw new Exception("This import requests unverified TLS. Edit the server and supply a certificate pin or correct verification name.");
+        return options;
+    }
+
 }

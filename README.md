@@ -1,6 +1,6 @@
 ## Android phone and Android TV
 
-Native Android 1.0.0 phone/TV apps are available in the [Android project](android/README.md).
+Native Android 1.0.1 phone/TV apps are available in the [Android project](android/README.md).
 Both require Android 10+ and 64-bit ARM/x86_64 userspace. They bundle Xray and
 use Android's VPN permission flow. TV adds a Leanback launcher and D-pad controls.
 See [Android validation](android/TEST_RESULTS.md) and its documented limits.
@@ -18,7 +18,7 @@ Supports Linux x86_64/glibc >=2.30 with dependency mappings for apt, pacman, dnf
 zypper and xbps. See [terminal installation](INSTALL.md) for prerequisites,
 other distributions, checks and removal.
 
-## 2.0.2 offline desktop release
+## 2.1.1 desktop release
 
 Choose the **Arch/Omarchy** or **Ubuntu 24.04** `offline.bin` installer for bundled runtime dependencies. Run it as your normal desktop user; it requests administrator authorization for installation. Both offline bundles also include the AppImage and portable files. Native Arch `-bin`, DEB, AppImage, portable Linux tar, Windows installer and Windows portable ZIP are also produced. See [offline packaging](packaging/offline/README.md) for prerequisites and build details. Android is not included.
 
@@ -36,9 +36,9 @@ The Linux client now uses the native Slint interface.
 | Platform | Artifact | Launch |
 | --- | --- | --- |
 | Windows 10/11 x64 | `SNI-Tunnel-V2-Setup-x64.exe` | Install, then open SNI Tunnel V2 |
-| Linux x86_64 | `SNI-Tunnel-V2-2.0.1-x86_64.AppImage` | Mark executable and open |
-| Debian-family amd64 | `sni-tunnel-v2_2.0.1_amd64.deb` | Install using the package manager |
-| Portable Linux | `sni-tunnel-v2_2.0.1_amd64.tar.gz` | Extract and run `start.sh` |
+| Linux x86_64 | `SNI-Tunnel-V2-2.1.1-x86_64.AppImage` | Mark executable and open |
+| Debian-family amd64 | `sni-tunnel-v2_2.1.1_amd64.deb` | Install using the package manager |
+| Portable Linux | `sni-tunnel-v2_2.1.1_amd64.tar.gz` | Extract and run `start.sh` |
 
 Verify downloads against the release's `SHA256SUMS`. The installers include their
 Xray/helper runtime assets; Rust and Cargo are build tools, not user requirements.
@@ -65,8 +65,8 @@ and Wi-Fi/suspend recovery checks; a successful build does not cover those cases
 
 Linux defaults to 100% UI scale. Set `SLINT_SCALE_FACTOR` explicitly to override it.
 Its system-proxy adapter supports GNOME/Cinnamon-compatible gsettings desktops.
-Other desktops can use the local HTTP/SOCKS listeners manually or use TUN. Linux
-tray and Windows-only compatibility/kill-switch controls are visibly unavailable.
+Other desktops can use the local HTTP/SOCKS listeners manually or use TUN. Windows compatibility options remain specific to Windows; Linux uses its native
+tray integration and nftables-based protection.
 The preserved Linux Xray 1.6.1/BadVPN path supports VMess WebSocket + TLS and rejects
 unsupported XUDP/certificate-pin combinations rather than discarding settings.
 
@@ -83,7 +83,7 @@ Windows DPAPI data must stay with the same Windows account. Example for the
 previous Linux Tk store:
 
 ```sh
-./SNI-Tunnel-V2-2.0.1-x86_64.AppImage migrate "$HOME/.config/sni-tunnel-linux"
+./SNI-Tunnel-V2-2.1.1-x86_64.AppImage migrate "$HOME/.config/sni-tunnel-linux"
 ```
 
 Disconnect the previous tunnel first. Do not run old/new clients against the same

@@ -32,6 +32,7 @@ ACTIVE_DNS = ['8.8.8.8', '8.8.4.4']
 DNS_BYTES = b'# SNI Tunnel temporary DNS\nnameserver 8.8.8.8\nnameserver 8.8.4.4\n'
 STOP = threading.Event()
 VERIFY = threading.Event()
+NETWORK_CHANGED = threading.Event()
 SECRETS = []
 PINNED_ADDRESS = {}
 EXPECTED_EXIT = None
@@ -40,6 +41,32 @@ HEALTH = {"enabled": True, "interval_secs": 60, "timeout_secs": 10, "reconnect_a
 
 class RecoverableError(RuntimeError):
     """A lost datapath; configuration and permission errors are not retried."""
+
+
+class IntegrityError(RecoverableError):
+    """Adapter/routing/firewall integrity loss needs immediate repair, not grace."""
+
+
+class HealthRecoveryWindow:
+    """Transient diagnostics never immediately tear down an established session."""
+    def __init__(self):
+        self.failures = 0
+        self.first_failure = None
+
+    def failed(self, now):
+        self.failures += 1
+        if self.first_failure is None:
+            self.first_failure = now
+        return self.failures >= 3 and now - self.first_failure >= 60
+
+    def succeeded(self):
+        self.failures = 0
+        self.first_failure = None
+
+
+def probe_socket_timeout():
+    # This is an I/O timeout, not a fraction of a multi-step verification.
+    return max(2, min(30, int(HEALTH['timeout_secs'])))
 
 
 def input_watch():
@@ -232,7 +259,7 @@ def verify_guard():
         return False
     guard = json.loads(journal.read_text())
     if not guard.get('rules') or guard_snapshot(guard['name']) != guard['rules']:
-        raise RuntimeError('Kill switch rules changed or disappeared; traffic protection is unverified')
+        raise IntegrityError('Kill switch rules changed or disappeared; traffic protection is unverified')
     return True
 
 
@@ -303,7 +330,7 @@ def receive_exact(sock, count):
 
 
 def https_probe(host, path, socks_port=None, timeout=None):
-    timeout = timeout or max(1, min(30, int(HEALTH["timeout_secs"])) / 6)
+    timeout = timeout or probe_socket_timeout()
     # Raw sockets never consult HTTP_PROXY/HTTPS_PROXY/ALL_PROXY. The SOCKS
     # path asks Xray to resolve the hostname, independently of system DNS.
     destination = ('127.0.0.1', socks_port) if socks_port else socket.getaddrinfo(host, 443, socket.AF_INET, socket.SOCK_STREAM)[0][4]
@@ -345,16 +372,16 @@ def https_probe(host, path, socks_port=None, timeout=None):
 def verify_routes():
     links = read_json(['ip', '-j', 'link', 'show', 'dev', DEVICE])
     if not links or 'UP' not in links[0].get('flags', []):
-        raise RuntimeError('TUN adapter is absent or down')
+        raise IntegrityError('TUN adapter is absent or down')
     for address in ('1.1.1.1', '8.8.8.8', *ACTIVE_DNS):
         route = read_json(['ip', '-j', '-4', 'route', 'get', address])
         if not route or route[0].get('dev') != DEVICE:
-            raise RuntimeError('IPv4 routing bypasses the TUN')
+            raise IntegrityError('IPv4 routing bypasses the TUN')
     v6 = read_json(['ip', '-j', '-6', 'route', 'show', 'table', 'main'])
     blocked = {r.get('dst') for r in v6 if r.get('type') == 'unreachable'
                and str(r.get('metric')) == METRIC}
     if not {'::/1', '8000::/1'} <= blocked:
-        raise RuntimeError('IPv6 protection routes are missing')
+        raise IntegrityError('IPv6 protection routes are missing')
 
 
 def dns_answer_valid(answer, query):
@@ -390,7 +417,8 @@ def verify(socks_port):
     def expired(*_):
         raise TimeoutError('Full-Tunnel verification exceeded its time budget')
     previous = signal.signal(signal.SIGALRM, expired)
-    signal.setitimer(signal.ITIMER_REAL, max(3, min(30, int(HEALTH['timeout_secs']))))
+    # Two independent HTTPS requests plus DNS share a bounded overall budget.
+    signal.setitimer(signal.ITIMER_REAL, probe_socket_timeout() * 3)
     try:
         return verify_once(socks_port)
     finally:
@@ -414,12 +442,14 @@ def verify_once(socks_port):
             for item in socket.getaddrinfo(host, 443, socket.AF_INET, socket.SOCK_STREAM):
                 route = read_json(['ip', '-j', '-4', 'route', 'get', item[4][0]])
                 if not route or route[0].get('dev') != DEVICE:
-                    raise RuntimeError('Probe route bypasses TUN')
+                    raise IntegrityError('Probe route bypasses TUN')
             proxied = https_probe(host, path, socks_port)
             ordinary = https_probe(host, path)
             if proxied != ordinary:
                 raise RuntimeError('Explicit proxy and system exits differ')
             break
+        except IntegrityError:
+            raise
         except (OSError, RuntimeError, ValueError) as exc:
             errors.append(str(exc))
             ordinary = None
@@ -436,7 +466,9 @@ def verify_once(socks_port):
         if peer != (ACTIVE_DNS[0], 53) or not dns_answer_valid(answer, query):
             raise RuntimeError('UDP DNS verification failed')
     if EXPECTED_EXIT is not None and ordinary != EXPECTED_EXIT:
-        raise RuntimeError('Verified exit changed from the session baseline')
+        # Routes, protection, proxy/system agreement and DNS just passed.
+        # NAT/load-balanced VPN egress can legitimately change in one session.
+        log('HEALTH: Verified proxy/system exit changed; refreshed session baseline')
     EXPECTED_EXIT = ordinary
     log(f'HEALTH: DNS forwarding verified; checks completed in {time.monotonic() - began:.2f}s; DNS payload {len(query) + len(answer)} bytes; HTTPS response bodies capped at 16 KiB each')
     return ordinary
@@ -609,8 +641,9 @@ def backend(options, recover_only=False):
                     raise RecoverableError(f'Initial forwarding verification failed: {exc}') from exc
                 time.sleep(1)
         log('CONNECTED: IPv4 proxy/system HTTPS and UDP DNS verified; IPv6 blocked; exit ' + exit_ip)
-        failures = 0
+        health_window = HealthRecoveryWindow()
         VERIFY.clear()
+        NETWORK_CHANGED.clear()
         last_check = time.monotonic()
         last_wall = time.time()
         # Netlink events via iproute2: no DBus/NetworkManager assumption on Sway.
@@ -623,29 +656,32 @@ def backend(options, recover_only=False):
             save()
         def changed():
             for _ in monitor.stdout:
-                VERIFY.set()
+                NETWORK_CHANGED.set()
         threading.Thread(target=changed, daemon=True).start()
         while not STOP.wait(.5):
             wall = time.time()
             if wall - last_wall > 5:
-                VERIFY.set()  # wake from sleep or a delayed scheduler
+                NETWORK_CHANGED.set()  # wake from sleep or a delayed scheduler
             last_wall = wall
             if any(p.poll() is not None for p in children):
                 dead = next(p for p in children if p.poll() is not None)
                 raise RecoverableError(f'{Path(dead.args[0]).name} exited (code {dead.returncode}); restoring networking')
-            requested = VERIFY.is_set() and time.monotonic() - last_check >= 2
-            if requested or (HEALTH['enabled'] and time.monotonic() - last_check > (5 if failures else max(15, min(3600, int(HEALTH['interval_secs']))))):
+            requested = VERIFY.is_set() or (NETWORK_CHANGED.is_set() and time.monotonic() - last_check >= 15)
+            if requested or (HEALTH['enabled'] and time.monotonic() - last_check > (15 if health_window.failures else max(15, min(3600, int(HEALTH['interval_secs']))))):
                 VERIFY.clear()
+                NETWORK_CHANGED.clear()
                 try:
                     checked_ip = verify(port)
                     log('VERIFIED: IPv4 proxy/system HTTPS and UDP DNS passed; IPv6 blocked; exit ' + checked_ip)
-                    failures = 0
+                    health_window.succeeded()
+                except IntegrityError:
+                    raise  # Never delay repair when route/firewall protection is lost.
                 except (OSError, RuntimeError) as exc:
-                    failures += 1
+                    should_recover = health_window.failed(time.monotonic())
                     defaults = read_json(['ip', '-j', '-4', 'route', 'show', 'default'])
                     reason = 'network unavailable (no physical default route)' if not any(r.get('dev') != DEVICE for r in defaults) else 'forwarding failure'
-                    log(f'DEGRADED: {reason}; check {failures}/3: {exc}')
-                    if failures >= 3:
+                    log(f'DEGRADED: {reason}; failed check {health_window.failures}; waiting for sustained failure before recovery: {exc}')
+                    if should_recover:
                         raise RecoverableError(f'{reason}: {exc}') from exc
                 last_check = time.monotonic()
     finally:

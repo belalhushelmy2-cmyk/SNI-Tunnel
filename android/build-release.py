@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Build signed phone/TV APKs; retain the private signing key outside source exports."""
 from pathlib import Path
-import argparse,os,secrets,subprocess,shutil,hashlib,json
+import argparse,os,secrets,subprocess,shutil,hashlib,json,re
 ROOT=Path(__file__).resolve().parent
 PROJECT=ROOT.parent
+VERSION=re.search(r"versionName '([^']+)'",(ROOT/'app/build.gradle').read_text()).group(1)
 
 def main():
- parser=argparse.ArgumentParser();parser.add_argument('--gradle',default=str(ROOT/'gradlew'));parser.add_argument('--output',type=Path,default=PROJECT.parent/'outputs/android/1.0.0');args=parser.parse_args()
+ parser=argparse.ArgumentParser();parser.add_argument('--gradle',default=str(ROOT/'gradlew'));parser.add_argument('--output',type=Path,default=PROJECT.parent/'outputs/android'/VERSION);args=parser.parse_args()
  subprocess.run(['python3',str(ROOT/'fetch-runtime.py')],check=True)
  env=os.environ.copy()
  if not env.get('SNI_ANDROID_KEYSTORE'):
@@ -22,7 +23,7 @@ def main():
  hashes=[]
  for flavor in ('phone','tv'):
   source=ROOT/'app/build/outputs/apk'/flavor/'release'/('app-'+flavor+'-release.apk')
-  dest=args.output/('SNI-Tunnel-'+('Android-TV' if flavor=='tv' else 'Android')+'-1.0.0.apk')
+  dest=args.output/('SNI-Tunnel-'+('Android-TV' if flavor=='tv' else 'Android')+'-'+VERSION+'.apk')
   shutil.copyfile(source,dest);hashes.append(hashlib.sha256(dest.read_bytes()).hexdigest()+'  '+dest.name)
  (args.output/'SHA256SUMS').write_text('\n'.join(hashes)+'\n')
  shutil.copyfile(ROOT/'README.md',args.output/'README.md')

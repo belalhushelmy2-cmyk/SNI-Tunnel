@@ -1,7 +1,8 @@
-# SNI Tunnel for Android and Android TV
+# SNI Tunnel for Android and Android TV 1.0.1
 
 Two native Android apps share a VpnService, encrypted profile store and pinned
-network runtimes. The phone app has touch controls; the TV flavor adds a
+network runtimes. Both flavors use Overview, Servers, SNI profiles, Activity, Settings and
+Diagnostics. The phone app has a navigation drawer; the TV flavor adds a
 Leanback launcher, landscape layout, large focusable controls and D-pad focus
 borders. Both accept VMess links, base64 subscription text, JSON profiles and
 UTF-8 file imports; every import appends with new profile IDs. A TV without a
@@ -16,24 +17,32 @@ Install the flavor appropriate to your device; only one VPN can be active.
 ## Usage
 
 1. Install the matching APK and open SNI Tunnel from the phone/TV launcher.
-2. Import your VMess profile and select it. Adjust TLS SNI / WebSocket Host if
-   needed, save them, then press Connect.
+2. Open Servers, import a VMess profile and press Use. Edit the server to adjust
+   dial address, TLS SNI and WebSocket Host/path independently. SNI profiles can
+   override SNI without changing the dial address or Host. Then connect from Overview.
 3. Accept Android's VPN connection request. Allow notifications to see the
    foreground connection notification. Disconnect in the app or notification.
 
 Supported: TCP, WebSocket and gRPC VMess, with standard verified TLS or plain
 VMess. TLS SNI, WebSocket Host/path and dial address remain independent.
-Unsupported legacy alterId and other transports are rejected. No insecure TLS
-switch, VLESS, REALITY, subscription fetching or QR scanner is included.
+Unsupported legacy alterId and other transports are rejected. The server editor
+also supports ALPN, fingerprint, multiplexing, an independent certificate
+verification name and a trusted leaf SHA256 pin. Normal TLS validation stays on
+by default. A pin replaces normal identity validation; use only a fingerprint you
+trust. Imported allowInsecure=true requires an explicit pin rather than silent
+bypass. No VLESS, REALITY, subscription fetching or QR scanner is included.
 
 The VPN captures IPv4/IPv6 and sends TCP/UDP through Hev's SOCKS5 forwarder to
 Xray. This application's UID (including Xray) is excluded to prevent loops.
 Other apps use the VPN; Android System VPN settings remain the authority on
-routing. Health checks perform a real SOCKS5 HTTPS request every 30 seconds.
+routing. Before enabling the VPN, startup requires an actual SOCKS5 HTTPS response.
+Periodic checks use two providers and run every 60 seconds by default; interval
+and timeout are configurable. Activity displays redacted core diagnostics.
 A successful check verifies the proxy; it does **not** prove every app's route,
 DNS, IPv6 behavior or every external site's reachability. A failed check leaves
-the VPN interface active and visibly degraded. Automatic recovery and Android
-always-on/lockdown are not implemented in this first version. Stopping/revoking
+the VPN interface active and visibly degraded. Recovery makes up to three attempts while retaining an established VPN; manual
+Reconnect resets that budget. Automatic recovery can be disabled in Settings.
+Android always-on/lockdown is not implemented. Stopping/revoking
 VPN releases its interface and child process. On service/process termination,
 Android may restore ordinary connectivity; this is not a persistent kill switch.
 
@@ -66,8 +75,8 @@ That script creates a private signing key under the git-ignored
 that directory securely**: Android updates must be signed by the same key.
 Never commit it. To use an external key, set `SNI_ANDROID_KEYSTORE` and
 `SNI_ANDROID_STORE_PASSWORD` (alias `sni-tunnel`). Future builds must increment
-versionCode when changing the released app. Versions are independent of the
-2.x desktop app. No Play Store publication is implied.
+versionCode when changing the released app. Version 1.0.1 uses versionCode 2 and the same retained key as 1.0.0. Versions
+are independent of the 2.x desktop app. No Play Store publication is implied.
 
 Pinned components (SHA256 checked by fetch-runtime.py):
 

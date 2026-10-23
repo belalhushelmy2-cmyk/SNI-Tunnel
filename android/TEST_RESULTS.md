@@ -1,41 +1,39 @@
-# Android 1.0.0 validation — 2026-10-23
+# Android 1.0.1 validation — 2026-10-23
 
-Executed locally with JDK 21, Gradle 8.11.1, Android SDK 35/build tools 35.0.0.
+Build: JDK 21, Gradle 8.11.1, SDK/build tools 35. Minimum API 29, target 35,
+arm64-v8a/x86_64. Signed phone and TV APKs built with zero lint errors.
 
-- Phone and TV signed release APKs built successfully.
-- Eight profile/config regression tests passed for each flavor (16 executions,
-  no skipped/failing tests): independent dial/SNI/Host, append-only duplicate
-  import, subscriptions, JSON arrays, invalid ports/UUIDs/transports and atomic
-  rejection of malformed batches.
-- Release lint: zero errors for both flavors. Warnings remain for localization
-  of English status text and the 320x180 vector TV banner.
-- apksigner verification passed; both APKs have the same retained private release
-  signing identity. Keys/passwords remain outside tracked source and APKs.
-- Both APKs contain byte-identical SHA256-pinned Xray arm64/x86_64 executables,
-  Hev JNI libraries and third-party license texts. Native ARM64 LOAD segments
-  are aligned to 16 KB. The APKs declare API 29 minimum, API 35 target and only
-  arm64-v8a/x86_64 ABIs. TV declares a Leanback launcher/banner and optional touch.
-- Installed both signed APKs successfully into an isolated Android 15/API 35
-  x86_64 KVM emulator. Launched and inspected phone/landscape TV UI screenshots.
-- Both flavors imported a synthetic VMess profile, accepted Android VPN consent,
-  started their bundled core/packet forwarder, performed a successful proxied
-  HTTPS health request, forwarded a TCP HTTP request from the Android shell
-  UID (captured by the VPN) through VMess to a synthetic host endpoint, then disconnected.
-  (The test shell UID was captured by the VPN; only the app/core UID bypasses it.)
-- TV focus moved with D-pad key events. This was the TV flavor on a standard
-  Android emulator, not a physical TV launcher/remote or Google TV system image.
-- While TV VPN was active, Android resolved www.iana.org using the configured
-  DNS server. The test VMess server recorded UDP forwarding to 1.1.1.1:53.
-  ICMP echo itself is not supported; a failed ping was not counted as an ICMP pass.
-- Encrypted profiles and selection persisted across a phone app process restart.
-- Desktop profiles, running desktop tunnel and installed desktop app were not
-  replaced or restarted. Emulator and synthetic server were isolated test data.
+- Fifteen Java regression tests passed for each flavor (30 executions): imports,
+  independent dial/SNI/Host, atomic batch rejection, UUID/port/transport validation,
+  verification-name/pin handling, refusal to silently enable unverified TLS, and
+  redaction/bounded event history.
+- apksigner verified both APKs. Their signing certificate matches both 1.0.0
+  APKs; `adb install -r` updated existing emulator installations and retained data.
+- API 35 x86_64 emulator: both phone drawer and TV sidebar reached Overview,
+  Servers, SNI profiles, Activity, Settings and Diagnostics with one click.
+- Both flavors appended a synthetic profile, searched it, selected Use and
+  displayed the selection in Overview. Existing synthetic profiles were kept.
+- Both flavors verified actual HTTPS through Xray before enabling Android VPN,
+  forwarded an HTTP request from the Android shell UID through VMess to an
+  isolated host endpoint, and disconnected successfully.
+- A self-signed VMess/WebSocket/TLS server with custom SNI was rejected without
+  a trusted certificate pin. Activity showed the certificate error and no
+  device VPN interface was left active after failed startup.
+- With an explicit SHA256 leaf certificate pin, the same controlled endpoint
+  connected with independent custom SNI / WebSocket Host and forwarded an
+  ordinary test request through VMess/WebSocket/TLS. The test server also
+  recorded UDP DNS forwarding to 1.1.1.1:53.
+- APKs bundle pinned Xray 26.10.21 / Hev 2.19.1 and license texts. No credentials
+  or signing keys are included. Native ARM64 ELF LOAD alignment was checked at
+  16 KB. Desktop connections/profile stores were not used as test credentials.
 
-Not executed: physical ARM64 phone/TV installation, OEM-specific permission or
-battery behavior, real-user VMess profiles, IPv6 end-to-end forwarding/leak tests,
-Wi-Fi/cellular handoff, long-session soak, Android 10/11 runtime compatibility,
-Play Store review or publication. No claim of persistent lockdown or automatic
-reconnect: this first Android version exposes failure and supports manual control.
+Limits: standard Android emulator, not physical phones/TVs or Google TV launcher
+images. Real-user servers, OEM battery/network behavior, older API-level runtime
+coverage, IPv6 leak/forwarding proof, Wi-Fi/cellular handoff and long soak remain
+unverified. The user's exact screenshot error was not reproduced with their
+credentials; certificate rejection is a demonstrated failure mode and errors
+are now visible rather than hidden. English/localization/vector-banner lint
+warnings remain. No persistent Android lockdown or Play Store publication.
 
-Signed APK filenames: SNI-Tunnel-Android-1.0.0.apk and
-SNI-Tunnel-Android-TV-1.0.0.apk. See output SHA256SUMS for exact bytes.
+Previous 1.0.0 results/artifacts remain in the earlier source revision/output
+folder. This report describes the modified 1.0.1 build only.

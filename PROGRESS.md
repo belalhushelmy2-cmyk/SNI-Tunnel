@@ -1092,3 +1092,30 @@ synthetic VMess TCP forwarding, health verification and disconnect passed; TV
 UDP DNS and phone process-restart profile retention passed. Physical devices,
 IPv6/handoff/soak and Play Store distribution remain untested. See
 android/TEST_RESULTS.md for exact scope. Desktop release assets are unchanged.
+
+
+## Stability and matching Android workflow — 2.1.1 / Android 1.0.1
+
+Fixed Linux socket timeouts accidentally divided by six, introduced a 60-second
+sustained diagnostic-failure window and 15-second event/retry spacing, retained
+connected controls during degraded health, refreshed a changing egress baseline
+only after current verification, and kept route/firewall integrity repair prompt.
+A portable local hotfix was staged without restarting the user's active session.
+131 Rust tests passed (5 opt-in tests ignored), plus 21 helper tests. Release
+version metadata/packages advance to 2.1.1; previous release assets are preserved.
+
+Android 1.0.1 adds the six desktop menu sections, individual server actions,
+separate SNI profiles, complete editor, diagnostics/events and saved monitoring/
+recovery preferences. Startup verifies forwarding before creating device VPN.
+Two-provider bounded probes, explicit verification name / trusted leaf pin,
+credential-redacted core logs, independent stats and bounded retained-VPN
+recovery replace the single-page generic-failure workflow. Fifteen unit tests
+per flavor and both lint gates passed. API 35 emulator checks passed for both
+menus, append/search/Use, proxy + ordinary TCP forwarding and disconnect;
+untrusted custom-SNI TLS failed before VPN capture and an explicitly pinned
+VMess/WebSocket/TLS test forwarded correctly. APK signatures match 1.0.0.
+See android/TEST_RESULTS.md for exact scope and physical-device limitations.
+
+Release CI also gates Android unit/lint/build checks and validates the locally
+tested, signed APKs against android/release-assets.json before publication.
+Publication is pending the workflow's successful final gates at this checkpoint.

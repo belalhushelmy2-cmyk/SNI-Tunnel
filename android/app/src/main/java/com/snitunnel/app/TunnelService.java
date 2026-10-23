@@ -9,39 +9,38 @@ import android.content.pm.ServiceInfo;
 import android.net.VpnService;
 import android.os.Build;
 import android.os.ParcelFileDescriptor;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.net.ServerSocket;
-import java.net.Socket;
+import java.io.*;
+import java.net.*;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import hev.htproxy.TProxyService;
 
 public final class TunnelService extends VpnService {
     public static volatile String status="Disconnected";
-    public static volatile boolean active=false;
-    public static volatile long latency=-1;
-    public static volatile long uploaded=0,downloaded=0;
+    public static volatile boolean active=false,verified=false,verifyRequested=false;
+    public static volatile long latency=-1,uploaded=0,downloaded=0,connectedAt=0;
+    public static volatile String serverName="No active server";
     private final ScheduledExecutorService worker=Executors.newSingleThreadScheduledExecutor();
     private volatile boolean stopping=true;
+    private boolean recoveryExhausted;
     private Process core;
     private ParcelFileDescriptor tun;
     private ScheduledFuture<?> monitor;
-    private int port;
-    private int failures;
+    private int port,failures,retries;
+    private long lastCheck,firstFailure;
     private File config;
+    private Profile profile;
+    private AppSettings settings;
     @Override public int onStartCommand(Intent intent,int flags,int startId) {
-        if(intent!=null&&"STOP".equals(intent.getAction())) { stopping=true;worker.execute(this::finish);return START_NOT_STICKY; }
+        if(intent!=null&&"STOP".equals(intent.getAction())){stopping=true;worker.execute(()->finish("Disconnected"));return START_NOT_STICKY;}
+        if(intent!=null&&"RECONNECT".equals(intent.getAction())&&active){worker.execute(()->recover(true));return START_NOT_STICKY;}
         if(active)return START_NOT_STICKY;
-        stopping=false;active=true;status="Preparing VPN…";
-        try { foreground(); } catch(Exception e) {active=false;stopping=true;stopSelf();return START_NOT_STICKY;}
-        worker.execute(this::connect);
-        return START_NOT_STICKY;
+        stopping=false;active=true;verified=false;recoveryExhausted=false;settings=new AppSettings(this);update("Preparing connection…");
+        try{foreground();}catch(Exception e){finish("Foreground service failed: "+Events.clean(e.getMessage()));return START_NOT_STICKY;}
+        worker.execute(this::connect);return START_NOT_STICKY;
     }
-    private void foreground() {
+    private void update(String value){status=value;Events.add(value);}
+    private void foreground(){
         NotificationManager manager=getSystemService(NotificationManager.class);
         manager.createNotificationChannel(new NotificationChannel("vpn","VPN connection",NotificationManager.IMPORTANCE_LOW));
         PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
@@ -49,67 +48,93 @@ public final class TunnelService extends VpnService {
         Notification notification=new Notification.Builder(this,"vpn").setSmallIcon(R.drawable.ic_shield).setContentTitle(getString(R.string.app_name)).setContentText(status).setContentIntent(open).addAction(new Notification.Action.Builder(null,"Disconnect",stop).build()).setOngoing(true).build();
         if(Build.VERSION.SDK_INT>=34)startForeground(1,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);else startForeground(1,notification);
     }
-    private void connect() {
-        try {
-            Profile profile=new ProfileStore(this).current();
-            try(ServerSocket reserve=new ServerSocket(0,1,java.net.InetAddress.getByName("127.0.0.1"))) { port=reserve.getLocalPort(); }
-            config=new File(getFilesDir(),"active-xray.json");write(config,profile.config(port).toString());
-            File executable=new File(getApplicationInfo().nativeLibraryDir,"libxray.so");
-            if(!executable.canExecute())throw new Exception("Bundled core is not executable on this device");
-            core=new ProcessBuilder(executable.getAbsolutePath(),"run","-config",config.getAbsolutePath()).redirectErrorStream(true).redirectOutput(new File("/dev/null")).start();
-            boolean ready=false;
-            for(int n=0;n<80&&!stopping;n++) {
-                if(!core.isAlive())throw new Exception("Core exited before startup");
-                try(Socket s=new Socket()) {s.connect(new java.net.InetSocketAddress("127.0.0.1",port),100);ready=true;break;}catch(Exception e){Thread.sleep(100);}
-            }
-            if(stopping){finish();return;}
-            if(!ready)throw new Exception("Core startup timed out");
+    private void connect(){
+        try{
+            profile=settings.apply(new ProfileStore(this).current());serverName=profile.name();
+            try(ServerSocket reserve=new ServerSocket(0,1,InetAddress.getByName("127.0.0.1"))){port=reserve.getLocalPort();}
+            startCore();
+            update("Verifying server forwarding before enabling VPN…");foreground();
+            latency=Probe.verify(port,settings.timeout());
+            if(stopping){finish("Disconnected");return;}
             Builder builder=new Builder().setSession("SNI Tunnel").setMtu(1500).addAddress("198.18.0.1",30).addAddress("fd00:198:18::1",126).addRoute("0.0.0.0",0).addRoute("::",0).addDnsServer("1.1.1.1");
-            // The core subprocess shares this UID. Exclude it to avoid routing loops.
-            builder.addDisallowedApplication(getPackageName());
-            builder.setMetered(false);
+            builder.addDisallowedApplication(getPackageName());builder.setMetered(false);
             tun=builder.establish();if(tun==null)throw new Exception("VPN permission was revoked");
-            String yaml="tunnel:\n  mtu: 1500\n  ipv4: 198.18.0.1\n  ipv6: 'fd00:198:18::1'\nsocks5:\n  address: 127.0.0.1\n  port: "+port+"\n  udp: 'udp'\nmisc:\n  log-level: error\n  connect-timeout: 5000\n  read-write-timeout: 60000\n";
-            File hev=new File(getFilesDir(),"active-tunnel.yml");write(hev,yaml);
-            if(!TProxyService.TProxyStartService(hev.getAbsolutePath(),tun.getFd()))throw new Exception("Packet forwarder could not start");
-            if(stopping){finish();return;}
-            status="VPN active · checking proxy…";foreground();
-            failures=0;
-            monitor=worker.scheduleWithFixedDelay(this::check,0,30,TimeUnit.SECONDS);
-        } catch(Exception|LinkageError error) {
-            status="Connection failed. Check the server, TLS SNI and device compatibility.";
-            finishKeepingStatus();
-        }
+            startForwarder();
+            if(stopping){finish("Disconnected");return;}
+            verified=true;connectedAt=System.currentTimeMillis();lastCheck=connectedAt;failures=0;retries=0;
+            update("Connected · proxy verified");foreground();
+            monitor=worker.scheduleWithFixedDelay(this::tick,1,1,TimeUnit.SECONDS);
+        }catch(Exception|LinkageError error){Events.add("Startup: "+error.getClass().getSimpleName()+": "+error.getMessage());finish("Connection failed · "+Events.hint());}
     }
-    private void check() {
-        if(stopping)return;
-        try {
-            if(core==null||!core.isAlive()||!TProxyService.TProxyIsRunning())throw new Exception("Forwarder stopped");
-            latency=Probe.verify(port);failures=0;
-            long[] stats=TProxyService.TProxyGetStats();
-            if(stats!=null&&stats.length>=4){uploaded=stats[1];downloaded=stats[3];}
-            status="VPN active · proxy verified";
-        } catch(Exception|LinkageError e) {
-            latency=-1;failures++;status="VPN active · health check failed ("+failures+")";
-            // Retain the VPN interface while degraded; never silently claim success.
+    private void startCore()throws Exception{
+        config=new File(getFilesDir(),"active-xray.json");write(config,profile.config(port).toString());
+        File executable=new File(getApplicationInfo().nativeLibraryDir,"libxray.so");
+        if(!executable.canExecute())throw new Exception("Bundled core is not executable on this device");
+        core=new ProcessBuilder(executable.getAbsolutePath(),"run","-config",config.getAbsolutePath()).redirectErrorStream(true).start();
+        final Process launched=core;
+        Thread logs=new Thread(()->{try(BufferedReader reader=new BufferedReader(new InputStreamReader(launched.getInputStream(),StandardCharsets.UTF_8))){String line;while((line=reader.readLine())!=null)Events.add("Core: "+line);}catch(IOException ignored){}},"core-log");logs.setDaemon(true);logs.start();
+        boolean ready=false;
+        for(int n=0;n<100&&!stopping;n++){
+            if(!core.isAlive())throw new Exception("Core exited before startup");
+            try(Socket s=new Socket()){s.connect(new InetSocketAddress("127.0.0.1",port),100);ready=true;break;}catch(IOException e){Thread.sleep(100);}
+        }
+        if(stopping)throw new InterruptedException("Connection cancelled");
+        if(!ready)throw new Exception("Core startup timed out");
+    }
+    private void startForwarder()throws Exception{
+        String yaml="tunnel:\n  mtu: 1500\n  ipv4: 198.18.0.1\n  ipv6: 'fd00:198:18::1'\nsocks5:\n  address: 127.0.0.1\n  port: "+port+"\n  udp: 'udp'\nmisc:\n  log-level: error\n  connect-timeout: 10000\n  read-write-timeout: 60000\n";
+        File hev=new File(getFilesDir(),"active-tunnel.yml");write(hev,yaml);
+        if(!TProxyService.TProxyStartService(hev.getAbsolutePath(),tun.getFd()))throw new Exception("Packet forwarder could not start");
+    }
+    private void tick(){
+        if(stopping||recoveryExhausted)return;
+        try{
+            if(core==null||!core.isAlive()||!TProxyService.TProxyIsRunning()){verified=false;recover(false);return;}
+            long[] stats=TProxyService.TProxyGetStats();if(stats!=null&&stats.length>=4){uploaded=stats[1];downloaded=stats[3];}
+            if(!verifyRequested&&(!settings.health()||System.currentTimeMillis()-lastCheck<settings.interval()*1000L))return;
+            verifyRequested=false;lastCheck=System.currentTimeMillis();
+            latency=Probe.verify(port,settings.timeout());if(stopping)return;verified=true;failures=0;firstFailure=0;
+            if(!status.equals("Connected · proxy verified"))update("Connected · proxy verified");
+        }catch(Exception|LinkageError e){
+            verified=false;latency=-1;failures++;if(firstFailure==0)firstFailure=System.currentTimeMillis();
+            Events.add("Health: "+e.getClass().getSimpleName()+": "+e.getMessage());
+            update("Degraded · VPN retained · "+Events.hint());
+            if(failures>=3&&System.currentTimeMillis()-firstFailure>=60000)recover(false);
         }
         if(!stopping)foreground();
     }
-    private void write(File file,String content)throws Exception {
-        try(FileOutputStream out=new FileOutputStream(file)){out.write(content.getBytes(StandardCharsets.UTF_8));}
+    private void recover(boolean manual){
+        if(stopping)return;
+        if(manual)recoveryExhausted=false;
+        if(!manual&&!settings.reconnect()){recoveryExhausted=true;verified=false;update("Degraded · recovery disabled; reconnect manually");foreground();return;}
+        if(tun==null){finish("Disconnected; press Connect to retry");return;}
+        verified=false;
+        for(int attempt=1;attempt<=3&&!stopping;attempt++){
+            retries=attempt;update("Reconnecting · attempt "+attempt+"/3; VPN retained");foreground();
+            try{
+                stopDatapath();
+                if(manual)profile=settings.apply(new ProfileStore(this).current());
+                for(int n=0;n<(1<<(attempt-1))*10&&!stopping;n++)Thread.sleep(100);
+                if(stopping)return;
+                startCore();latency=Probe.verify(port,settings.timeout());startForwarder();
+                serverName=profile.name();verified=true;failures=0;firstFailure=0;lastCheck=System.currentTimeMillis();
+                update("Connected · proxy verified");foreground();return;
+            }catch(Exception|LinkageError e){Events.add("Recovery: "+e.getClass().getSimpleName()+": "+e.getMessage());}
+        }
+        if(!stopping){recoveryExhausted=true;update("Recovery failed · VPN retained; reconnect or disconnect");foreground();}
     }
-    private void finish() { status="Disconnected";finishKeepingStatus(); }
-    private void finishKeepingStatus() {
-        stopping=true;
-        if(monitor!=null){monitor.cancel(false);monitor=null;}
+    private void stopDatapath(){
         try{TProxyService.TProxyStopService();}catch(LinkageError ignored){}
-        if(tun!=null){try{tun.close();}catch(Exception ignored){}tun=null;}
         if(core!=null){core.destroy();try{if(!core.waitFor(2,TimeUnit.SECONDS))core.destroyForcibly();}catch(InterruptedException e){Thread.currentThread().interrupt();}core=null;}
-        if(config!=null)config.delete();
-        new File(getFilesDir(),"active-tunnel.yml").delete();
-        active=false;latency=-1;uploaded=0;downloaded=0;
-        stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();
     }
-    @Override public void onRevoke(){stopping=true;worker.execute(this::finish);}
-    @Override public void onDestroy(){stopping=true;worker.shutdownNow();finishKeepingStatus();super.onDestroy();}
+    private void write(File file,String value)throws Exception{try(FileOutputStream out=new FileOutputStream(file)){out.write(value.getBytes(StandardCharsets.UTF_8));}}
+    private synchronized void finish(String message){
+        stopping=true;verified=false;if(monitor!=null){monitor.cancel(false);monitor=null;}stopDatapath();
+        if(tun!=null){try{tun.close();}catch(IOException ignored){}tun=null;}
+        if(config!=null)config.delete();new File(getFilesDir(),"active-tunnel.yml").delete();
+        active=false;latency=-1;connectedAt=0;uploaded=0;downloaded=0;verifyRequested=false;
+        if(!status.equals(message))update(message);stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();
+    }
+    @Override public void onRevoke(){stopping=true;worker.execute(()->finish("VPN permission revoked"));}
+    @Override public void onDestroy(){stopping=true;worker.shutdownNow();finish(status);super.onDestroy();}
 }

@@ -1,17 +1,53 @@
-# SNI Tunnel V2 2.1.0 — connection health and recovery
+# SNI Tunnel 2.1.1 — stability fixes and Android workflow update
 
-Full-Tunnel mode now checks real forwarding every 60 seconds by default. It compares an explicit VMess proxy request with an ordinary IPv4 request, validates a fresh DNS response, checks routing and IPv6 protection, and checks the session's previously verified exit. Checks run off the GUI thread and do not inherit proxy environment variables.
+## Linux desktop
 
-Network changes and core exits trigger earlier checks/recovery. Automatic reconnection uses bounded backoff with jitter. The dashboard has connection health, verification timing, protection status, Verify Now, Reconnect Now and Disconnect / release protection. Settings include monitoring, interval, timeout, attempts and notifications. Notifications are grouped and retained in Activity.
+- Fixed probe socket timeouts being divided by six: the default 10-second
+  preference previously became about 1.7 seconds per operation. It now applies
+  to socket I/O, with a bounded full-check budget of three times that value.
+- Repeated diagnostic failures must persist for at least 60 seconds before
+  automatic recovery tears down a live tunnel. Follow-up checks and network
+  event bursts are spaced by at least 15 seconds. Manual Verify stays immediate.
+- A degraded health check keeps the session controls/uptime live; it no longer
+  presents an intact tunnel as disconnected. Health remains visibly degraded.
+- Verified egress changes refresh the baseline only after current proxy/system,
+  route/protection and DNS checks pass. NAT/load-balanced egress changes alone
+  no longer force a reconnect.
+- Core death and route/firewall integrity loss still trigger immediate repair.
+  Existing profile choices, firewall enforcement and manual stop are preserved.
 
-Linux uses an application-owned nftables output guard; Windows uses a dynamic Windows Filtering Platform session. These remain independent of Xray's lifetime. Neither changes unrelated firewall rules. IPv6 internet forwarding is not claimed: this release protects IPv6 while verifying IPv4 forwarding. A small probe cannot prove every packet's route; enforcement and checks are complementary.
+Remote server HTTP 500 responses, WebSocket resets and account/server outages
+can still interrupt traffic; these fixes do not guarantee server availability.
 
-## Recovery and compatibility
+## Android phone and Android TV 1.0.1
 
-- Manual disconnect releases protection. If the Linux privileged helper crashes, run `sudo /usr/lib/sni-tunnel-v2/network.py --recover` (or the helper beside your portable executable) to restore application-owned networking. Windows dynamic filters are removed when the application exits, avoiding permanent lockout.
-- The legacy Windows TAP compatibility backend remains available, but cannot report full-tunnel verification without an independent health inbound. Standard Wintun is the supported verified path.
-- Linux requires nftables and a working TUN kernel; native packages and distribution-specific offline bundles include the new dependencies. Linux notifications require the desktop's Freedesktop notification service (including Sway notification daemons). Windows uses native notification-area messages; OS notification preferences still apply.
-- Saved servers and explicit settings are retained. New/missing health preferences use enabled defaults; an existing disabled automatic-reconnect preference stays disabled.
-- Xray/core versions are unchanged. Previous release assets are preserved.
+- Matching Overview, Servers, SNI profiles, Activity, Settings and Diagnostics
+  sections. Phone navigation drawer; TV sidebar with single-click/D-pad controls.
+- Individual server rows with Use, Edit, Test, Duplicate, Export and Delete;
+  append-only import, search, sorting and separate reusable SNI profiles.
+- Complete server editor preserves dial address, port, UUID, transport, TLS SNI,
+  WebSocket Host/path, certificate verification name/pin, ALPN, fingerprint and
+  multiplexing independently.
+- Server forwarding is verified before a device VPN is established. Failed TLS
+  or WebSocket startup shows redacted errors in Activity instead of leaving the
+  device in an unverified VPN with a generic green-looking status.
+- Explicit verification-name and trusted leaf-certificate pin controls support
+  custom-SNI deployments. Normal TLS verification remains enabled by default;
+  imported requests for insecure TLS are never silently enabled.
+- Bounded recovery retains an established VPN during retry; interval/timeout and
+  reconnect preferences are saved. Stats refresh independently of health success.
+- Signed with the same Android release identity as 1.0.0; versionCode 2 supports
+  in-place APK updates without deleting saved profiles. Requires Android 10+
+  and arm64-v8a or x86_64 userspace. Phone and TV stores remain separate.
 
-See TEST_RESULTS.md for tests actually executed and remaining runtime limitations. Windows EXE/portable ZIP, Linux DEB/AppImage/tar, native Arch-bin package, and Arch/Ubuntu 24.04 offline .bin bundles are built by the release workflow.
+## Packages and validation
+
+Windows installer/ZIP, Linux DEB/AppImage/tar, Arch-bin and Arch/Ubuntu 24.04
+self-contained offline installers are built by the release workflow. Signed
+Android phone/TV APKs are checked against the public release digest manifest.
+All checks complete before the draft is marked Latest; previous releases remain.
+
+See TEST_RESULTS.md and android/TEST_RESULTS.md for executed checks. Android
+hardware/OEM behavior, long-session soak and the user's particular remote server
+have not been verified by emulator or unit tests. Android always-on lockdown is
+not implemented; explicit Disconnect restores ordinary networking.

@@ -348,8 +348,7 @@ pub fn run(cfg: Arc<Mutex<AppConfig>>, logger: Logger) -> Result<i32> {
                             "TUN / DNS / IPv4 / IPv6: awaiting verification".into(),
                         );
                     }
-                    let still_connected = s.phase.forwarding()
-                        || (s.phase == Phase::Verifying && state.is_connected());
+                    let still_connected = connection_is_live(s.phase, state.is_connected());
                     ui.set_connection_live(still_connected);
                     ui.set_connection_busy(!matches!(s.phase, Phase::Disconnected | Phase::Error));
                     ui.set_phase(s.phase.label().into());
@@ -1754,5 +1753,33 @@ fn request_editor_close(editor: &ServerEditor) {
         editor.set_ed_confirm_close(true);
     } else {
         let _ = editor.hide();
+    }
+}
+
+fn connection_is_live(phase: Phase, was_live: bool) -> bool {
+    phase.forwarding() || (matches!(phase, Phase::Verifying | Phase::Degraded) && was_live)
+}
+
+#[cfg(test)]
+mod connection_liveness_tests {
+    use super::*;
+
+    #[test]
+    fn temporary_health_failure_preserves_established_session() {
+        assert!(connection_is_live(Phase::Degraded, true));
+        assert!(connection_is_live(Phase::Verifying, true));
+        assert!(!connection_is_live(Phase::Degraded, false));
+    }
+
+    #[test]
+    fn actual_disconnect_and_recovery_do_not_remain_live() {
+        for phase in [
+            Phase::Disconnected,
+            Phase::Error,
+            Phase::Disconnecting,
+            Phase::Reconnecting,
+        ] {
+            assert!(!connection_is_live(phase, true));
+        }
     }
 }

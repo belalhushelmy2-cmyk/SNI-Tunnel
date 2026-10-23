@@ -145,3 +145,47 @@ class DnsAnswerTests(unittest.TestCase):
 
     def test_wrong_transaction_is_rejected(self):
         self.assertFalse(network.dns_answer_valid(b'\x00\x00' + self.answer()[2:], self.query()))
+
+class HealthStabilityTests(unittest.TestCase):
+    def test_default_timeout_is_not_divided_between_socket_operations(self):
+        with patch.dict(network.HEALTH, {'timeout_secs': 10}):
+            self.assertEqual(network.probe_socket_timeout(), 10)
+
+    def test_transient_and_clustered_failures_do_not_restart_tunnel(self):
+        window = network.HealthRecoveryWindow()
+        for now in (0, 5, 10, 15):
+            self.assertFalse(window.failed(now))
+        window.succeeded()
+        self.assertFalse(window.failed(100))
+        self.assertFalse(window.failed(115))
+        self.assertFalse(window.failed(130))
+
+    def test_only_sustained_repeated_failure_requests_recovery(self):
+        window = network.HealthRecoveryWindow()
+        self.assertFalse(window.failed(0))
+        self.assertFalse(window.failed(30))
+        self.assertTrue(window.failed(60))
+
+    def test_success_resets_failure_window(self):
+        window = network.HealthRecoveryWindow()
+        window.failed(0)
+        window.failed(50)
+        window.succeeded()
+        self.assertFalse(window.failed(100))
+        self.assertEqual(window.failures, 1)
+
+    def test_rotating_exit_is_accepted_only_after_current_checks_pass(self):
+        from unittest.mock import MagicMock
+        query = DnsAnswerTests().query()
+        answer = DnsAnswerTests().answer()
+        udp = MagicMock()
+        udp.__enter__.return_value = udp
+        udp.recvfrom.return_value = (answer, ('8.8.8.8', 53))
+        with patch.object(network, 'EXPECTED_EXIT', '198.51.100.1'), patch.object(network, 'ACTIVE_DNS', ['8.8.8.8']), \
+             patch.object(network, 'verify_guard', return_value=True), patch.object(network, 'verify_routes'), \
+             patch.object(network, 'read_json', return_value=[{'dev': 'sni0'}]), patch.object(network, 'log'), \
+             patch.object(network.socket, 'getaddrinfo', return_value=[(2, 1, 6, '', ('1.1.1.1', 443))]), \
+             patch.object(network, 'https_probe', side_effect=['198.51.100.2', '198.51.100.2']), \
+             patch.object(network.socket, 'socket', return_value=udp), patch.object(network.os, 'urandom', return_value=query[:2]):
+            self.assertEqual(network.verify_once(1234), '198.51.100.2')
+            self.assertEqual(network.EXPECTED_EXIT, '198.51.100.2')

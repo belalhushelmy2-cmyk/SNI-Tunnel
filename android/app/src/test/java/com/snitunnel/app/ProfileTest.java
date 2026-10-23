@@ -17,4 +17,10 @@ public class ProfileTest {
     @Test(expected=Exception.class)public void unsupportedTransport()throws Exception{new Profile(sample().put("net","kcp"));}
     @Test(expected=Exception.class)public void invalidUuid()throws Exception{new Profile(sample().put("id","secret"));}
     @Test(expected=Exception.class)public void batchIsAtomic()throws Exception{Profile.parse(link()+"\nnot-a-server");}
+    @Test public void certificateVerificationNameIndependentOfSni()throws Exception{JSONObject tls=new Profile(sample().put("verifyPeerCertByName","actual.example.com")).config(1080).getJSONArray("outbounds").getJSONObject(0).getJSONObject("streamSettings").getJSONObject("tlsSettings");assertEquals("tls.example.com",tls.getString("serverName"));assertEquals("actual.example.com",tls.getString("verifyPeerCertByName"));}
+    @Test public void trustedLeafPinPreserved()throws Exception{String pin=new String(new char[64]).replace('\0','a');JSONObject tls=new Profile(sample().put("pinnedPeerCertSha256",pin)).config(1080).getJSONArray("outbounds").getJSONObject(0).getJSONObject("streamSettings").getJSONObject("tlsSettings");assertEquals(pin,tls.getString("pinnedPeerCertSha256"));assertFalse(tls.has("allowInsecure"));}
+    @Test(expected=Exception.class)public void unverifiedTlsNotSilentlyEnabled()throws Exception{new Profile(sample().put("allowInsecure",true)).config(1080);}
+    @Test(expected=Exception.class)public void malformedPinRejected()throws Exception{new Profile(sample().put("pinnedPeerCertSha256","wrong")).config(1080);}
+    @Test(expected=Exception.class)public void shortenedUuidRejected()throws Exception{new Profile(sample().put("id","1-1-1-1-1"));}
+
 }
