@@ -8,6 +8,9 @@ Desktop and Android versions, package IDs and user stores are separate.
 
 ## Install or update on Linux
 
+Desktop release 2.1.2 includes the measured proxy performance controls. The command
+below updates an existing installation to the latest published package.
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/belalhushelmy2-cmyk/SNI-Tunnel/main/install.sh -o "$HOME/sni-tunnel-install.sh" && bash "$HOME/sni-tunnel-install.sh"
 ```

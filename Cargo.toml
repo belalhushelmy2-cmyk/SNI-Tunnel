@@ -1,6 +1,6 @@
 [package]
 name = "sni-tunnel"
-version = "2.1.1"
+version = "2.1.2"
 edition = "2021"
 build = "build.rs"
 description = "SNI Tunnel - lightweight VMess + custom TLS SNI client (Windows desktop app, headless client for Linux)"

@@ -1139,3 +1139,10 @@ forwarding smoke through the existing core. No production installation or live
 connection was replaced/restarted. Development AppImage is in outputs/performance.
 WARP is not enabled: VMess-only access cannot install server software, and the
 retained Linux core rejects WireGuard outbounds. No core/security/profile change.
+
+## Publish desktop performance build — 2.1.2
+
+Preparing versioned Linux/Windows packages from the installed performance code.
+The existing installer URL and release lookup are unchanged. Release publication
+is gated on desktop, Arch and Android CI; unchanged signed Android 1.0.3 APKs
+are carried forward with pinned SHA-256 checks.

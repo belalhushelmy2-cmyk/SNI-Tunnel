@@ -100,7 +100,7 @@ Publication is pending the workflow's successful final gates at this checkpoint.
 - Show discovery-stage progress and errors; classify current-stage failures
   without stale certificate errors from previous connections.
 
-## Desktop performance work (development)
+## Desktop performance work — 2.1.2
 
 - Coalesce buffered HTTP request headers/body to avoid measured delayed-ACK
   stalls. Count that forwarded data in upload statistics.
