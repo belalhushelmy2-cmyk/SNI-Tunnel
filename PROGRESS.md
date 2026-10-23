@@ -1032,3 +1032,8 @@ Published v0.4.1 to https://github.com/belalhushelmy2-cmyk/SNI-Tunnel/releases/t
 - Validation run 39957998051: Windows regression, live WFP test, EXE build and installer payload checks passed.
 - Linux CI regression/formatting/Clippy passed; isolated test launch was blocked by root access to the checkout. The workflow now copies only the public test/helper into a readable temporary directory before entering a separate network namespace. No security restriction is disabled.
 - Final publication remains gated on successful rerun of every required job.
+
+### Packaging audit
+- Added nftables/libnotify to native Arch-bin dependency metadata as well as offline bundles.
+- Versioned offline staging avoids selecting stale packages from earlier builds.
+- Superseded push builds are cancelled and publication verifies the current main commit before creating a release.

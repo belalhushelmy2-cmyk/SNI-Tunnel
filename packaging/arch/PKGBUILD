@@ -7,7 +7,7 @@ url='https://github.com/belalhushelmy2-cmyk/SNI-Tunnel'
 license=('LicenseRef-SNI-Tunnel')
 depends=('glibc' 'gcc-libs' 'fontconfig' 'libxkbcommon' 'libxkbcommon-x11'
          'libxcb' 'libx11' 'libxcursor' 'libxrandr' 'libxi' 'wayland'
-         'python' 'iproute2' 'polkit' 'ca-certificates' 'kmod' 'glib2' 'dbus')
+         'python' 'iproute2' 'nftables' 'libnotify' 'polkit' 'ca-certificates' 'kmod' 'glib2' 'dbus')
 optdepends=('wl-clipboard: clipboard import on Wayland'
             'xclip: clipboard import on X11'
             'hyprpolkitagent: authentication dialog on Hyprland/Omarchy'

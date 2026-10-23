@@ -18,8 +18,30 @@ env:
   RUST_MIN_STACK: '16777216'
   RELEASE_TAG: v2.1.0
 
+concurrency:
+  group: sni-release-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  prepare:
+    name: Supersede obsolete push builds
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Cancel older push builds of this workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/release.yml/runs?branch=main&status=in_progress" --jq '.workflow_runs[] | select(.event == "push") | [.id, .head_sha] | @tsv' |
+          while read -r run_id run_sha; do
+            if [ "$run_id" != "$GITHUB_RUN_ID" ] && [ "$run_sha" != "$GITHUB_SHA" ]; then
+              gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY"
+            fi
+          done
   linux:
+    needs: prepare
     name: Linux tests, DEB and AppImage
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -91,6 +113,7 @@ jobs:
           if-no-files-found: error
 
   windows:
+    needs: prepare
     name: Windows tests and x64 installer
     runs-on: windows-latest
     timeout-minutes: 60
@@ -199,6 +222,10 @@ jobs:
           assert all((root/name).is_file() for name in required)
           assert all((root/name).stat().st_size > 1000000 for name in required[:5])
           (root/'SHA256SUMS').write_text(''.join(hashlib.sha256((root/name).read_bytes()).hexdigest()+'  '+name+'\n' for name in sorted(p.name for p in root.iterdir() if p.is_file() and p.name != 'SHA256SUMS')))
+      - name: Require the latest main commit before publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')" = "$GITHUB_SHA"
       - name: Refuse to modify an existing published version
         env:
           GH_TOKEN: ${{ github.token }}

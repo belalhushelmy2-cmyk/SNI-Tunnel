@@ -4,7 +4,7 @@ set -euo pipefail
 source /etc/os-release
 [[ $ID == ubuntu && $VERSION_ID == 24.04 ]]
 assets=$(realpath "${1:-releases/v2/linux}")
-root=$(realpath -m target/offline-ubuntu/bundle)
+root=$(realpath -m target/offline-ubuntu/2.1.0/bundle)
 mkdir -p "$root/packages/partial"
 cp "$assets/sni-tunnel-v2_2.1.0_amd64.deb" "$root/packages/"
 cp "$assets/SNI-Tunnel-V2-2.1.0-x86_64.AppImage" "$assets/sni-tunnel-v2_2.1.0_amd64.tar.gz" "$root/"
