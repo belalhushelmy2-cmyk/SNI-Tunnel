@@ -1,6 +1,8 @@
 # Performance baseline — 2026-10-23
 
-Checkpoint: `perf-baseline-20261023` (before networking edits). Existing Rust/
+Local checkpoint: `perf-baseline-20261023` (before networking edits). Public
+baseline commit: `ef7a36e344d2be62b48f52c4ced710df3a1eeccb`; its relay
+source is byte-for-byte identical to the checkpoint. Existing Rust/
 Slint architecture, bundled cores, server profiles and active tunnel retained.
 Measurements are bounded; no bulk Internet transfer, route change, reconnect,
 MUX change, DNS change or global TCP tuning was performed.

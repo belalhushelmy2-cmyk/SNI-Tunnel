@@ -1130,7 +1130,12 @@ HTTP writes, added optional NODELAY/buffer modes, structured proxy-task cleanup,
 accurate buffered upload accounting and bounded dual-stack failover. Settings
 controls are explicitly limited to the local relay; TUN is not falsely tuned.
 139 Rust tests, 21 Python helper tests, Clippy and offline Slint layout checks
-passed locally. Release builds and final benchmark comparison are in progress.
-WARP cannot be installed on the provider from a VMess link. Client chaining
-needs WARP registration/configuration and a compatible core; existing Linux
-core is retained as explicitly required. No nonfunctional toggle was added.
+passed locally. Linux release/AppImage build and Windows/Linux/Arch packaging CI passed. The final
+response-validated interleaved comparison completed without request failures.
+Small buffered POST p50 fell from 41.036 ms to 0.194 ms locally; this is not
+VMess/TUN/gaming RTT. Balanced upload and Low Latency download tradeoffs are
+recorded in PERFORMANCE_RESULTS.md. All three modes passed a small HTTPS
+forwarding smoke through the existing core. No production installation or live
+connection was replaced/restarted. Development AppImage is in outputs/performance.
+WARP is not enabled: VMess-only access cannot install server software, and the
+retained Linux core rejects WireGuard outbounds. No core/security/profile change.

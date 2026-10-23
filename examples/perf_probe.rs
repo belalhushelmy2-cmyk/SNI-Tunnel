@@ -1,5 +1,5 @@
 //! Bounded loopback-only proxy benchmark. No real profiles or external network.
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde_json::{json, Value};
 use sni_tunnel::{localproxy::LocalProxy, logging::Logger, stats::Traffic};
 use std::{sync::Arc, time::Instant};
@@ -119,6 +119,21 @@ async fn request(port: u16, path: &str, upload: usize) -> Result<(f64, usize)> {
     anyhow::ensure!(
         response.starts_with(b"HTTP/1.1 200"),
         "invalid benchmark response"
+    );
+    let end = response
+        .windows(4)
+        .position(|part| part == b"\r\n\r\n")
+        .context("Incomplete HTTP response header")?
+        + 4;
+    let expected = if path == "/download" {
+        8 * 1024 * 1024
+    } else {
+        64
+    };
+    anyhow::ensure!(
+        bytes == end + expected,
+        "Incomplete benchmark payload: received {bytes}, expected {}",
+        end + expected
     );
     Ok((started.elapsed().as_secs_f64() * 1000., bytes))
 }

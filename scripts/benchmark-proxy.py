@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--baseline-ref', default='perf-baseline-20261023')
+    parser.add_argument('--baseline-ref', default='ef7a36e344d2be62b48f52c4ced710df3a1eeccb')
     parser.add_argument('--output', type=Path, default=ROOT/'work/performance/reproducible')
     parser.add_argument('--rounds', type=int, default=2, choices=range(1, 6))
     args = parser.parse_args()

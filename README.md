@@ -135,13 +135,13 @@ See [PERFORMANCE_BASELINE.md](PERFORMANCE_BASELINE.md) and
 [PERFORMANCE_RESULTS.md](PERFORMANCE_RESULTS.md). The benchmark is local-only:
 
 ```sh
-python3 scripts/benchmark-proxy.py --baseline-ref perf-baseline-20261023
+python3 scripts/benchmark-proxy.py --baseline-ref ef7a36e344d2be62b48f52c4ced710df3a1eeccb
 ```
 
 It compiles the checkpoint's original proxy code into a temporary benchmark
 adapter and compares it with the current relay using identical loopback
 workloads. No real profiles, external downloads or system routing changes are used.
-Local benchmark throughput must not be interpreted as Internet speed.
+Local benchmark throughput must not be interpreted as Internet speed. Low Latency can reduce bulk download throughput; use Balanced for conservative behavior or Maximum Throughput for large transfers.
 
 Cloudflare WARP on a provider's server requires its administrator. A VMess link
 alone cannot install or reconfigure that server. Client-side WARP chaining is
