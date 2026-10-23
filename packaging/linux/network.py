@@ -357,6 +357,35 @@ def verify_routes():
         raise RuntimeError('IPv6 protection routes are missing')
 
 
+def dns_answer_valid(answer, query):
+    if (len(answer) < len(query) or answer[:2] != query[:2] or not answer[2] & 128
+            or answer[3] & 15 or answer[4:6] != b'\x00\x01' or answer[12:len(query)] != query[12:]):
+        return False
+    offset = len(query)
+    try:
+        for _ in range(int.from_bytes(answer[6:8], 'big')):
+            while answer[offset]:
+                length = answer[offset]
+                if length & 192 == 192:
+                    offset += 2
+                    break
+                if length > 63:
+                    return False
+                offset += length + 1
+            else:
+                offset += 1
+            kind, cls, _, length = struct.unpack('!HHIH', answer[offset:offset+10])
+            offset += 10
+            if offset + length > len(answer):
+                return False
+            if kind == 1 and cls == 1 and length == 4:
+                return True
+            offset += length
+    except (IndexError, struct.error):
+        return False
+    return False
+
+
 def verify(socks_port):
     def expired(*_):
         raise TimeoutError('Full-Tunnel verification exceeded its time budget')
@@ -404,13 +433,12 @@ def verify_once(socks_port):
         udp.settimeout(max(1, min(3, int(HEALTH["timeout_secs"]) / 3)))
         udp.sendto(query, (ACTIVE_DNS[0], 53))
         answer, peer = udp.recvfrom(4096)
-        if (peer != (ACTIVE_DNS[0], 53) or len(answer) < 12 or answer[:2] != transaction
-                or not answer[2] & 128 or answer[3] & 15 or answer[6:8] == b'\x00\x00'):
+        if peer != (ACTIVE_DNS[0], 53) or not dns_answer_valid(answer, query):
             raise RuntimeError('UDP DNS verification failed')
     if EXPECTED_EXIT is not None and ordinary != EXPECTED_EXIT:
         raise RuntimeError('Verified exit changed from the session baseline')
     EXPECTED_EXIT = ordinary
-    log(f'HEALTH: DNS forwarding verified; checks completed in {time.monotonic() - began:.2f}s')
+    log(f'HEALTH: DNS forwarding verified; checks completed in {time.monotonic() - began:.2f}s; DNS payload {len(query) + len(answer)} bytes; HTTPS response bodies capped at 16 KiB each')
     return ordinary
 
 

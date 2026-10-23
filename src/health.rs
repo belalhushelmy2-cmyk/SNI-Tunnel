@@ -52,6 +52,17 @@ impl Notifications {
             _ => None,
         };
         let (title, body) = event?;
+        self.record(title, body, now)
+    }
+    pub fn routing_warning(&mut self, now: Instant) -> Option<(&'static str, &'static str)> {
+        self.record("Routing Warning", "Traffic protection could not be verified. Some traffic may be bypassing the tunnel; check SNI Tunnel.", now)
+    }
+    fn record(
+        &mut self,
+        title: &'static str,
+        body: &'static str,
+        now: Instant,
+    ) -> Option<(&'static str, &'static str)> {
         if self
             .last
             .get(title)

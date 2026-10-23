@@ -188,11 +188,14 @@ pub fn spawn(cfg: Arc<Mutex<AppConfig>>, logger: Logger) -> EngineHandle {
         last: TrafficSnapshot::default(),
         last_tick: Instant::now(),
         retries: 0,
+        network_waiting: false,
         reconnect_at: None,
         recovery_endpoint: None,
         recovery_server_id: None,
         #[cfg(target_os = "linux")]
         linux_tunnel: None,
+        #[cfg(target_os = "linux")]
+        linux_recovery_needed: false,
         full_tunnel: false,
         trusted_exit: None,
         last_health: Instant::now(),
@@ -261,11 +264,14 @@ struct Core {
     last: TrafficSnapshot,
     last_tick: Instant,
     retries: u32,
+    network_waiting: bool,
     reconnect_at: Option<Instant>,
     recovery_endpoint: Option<Endpoint>,
     recovery_server_id: Option<String>,
     #[cfg(target_os = "linux")]
     linux_tunnel: Option<crate::linux_tunnel::LinuxTunnel>,
+    #[cfg(target_os = "linux")]
+    linux_recovery_needed: bool,
     /// The public IP seen before the tunnel was started.
     /// Is ordinary system traffic confirmed to use the tunnel?
     full_tunnel: bool,
@@ -318,6 +324,10 @@ impl Core {
                 self.connect().await;
             }
             Command::Disconnect => {
+                #[cfg(target_os = "linux")]
+                if self.linux_tunnel.is_none() && self.cfg.lock().unwrap().settings.mode == "tun" {
+                    self.linux_recovery_needed = true;
+                }
                 self.trusted_exit = None;
                 self.reconnect_at = None;
                 self.recovery_endpoint = None;
@@ -828,7 +838,8 @@ impl Core {
             let stats = self.linux_tunnel.as_mut().unwrap().stats();
             let _ = self.events.send(EngineEvent::Stats(stats));
             if let Some(code) = code {
-                self.teardown().await;
+                let retain = code != 0 && self.cfg.lock().unwrap().settings.kill_switch;
+                self.teardown_with(retain).await;
                 self.emit(
                     if code == 0 {
                         Phase::Disconnected
@@ -844,6 +855,20 @@ impl Core {
         // Pending auto-reconnect?
         if let Some(at) = self.reconnect_at {
             if Instant::now() >= at {
+                #[cfg(windows)]
+                if !crate::network_events::physical_available() {
+                    if !self.network_waiting {
+                        self.emit(
+                            Phase::Degraded,
+                            "Physical network unavailable; recovery paused until it returns".into(),
+                            None,
+                        );
+                    }
+                    self.network_waiting = true;
+                    self.reconnect_at = Some(Instant::now() + Duration::from_secs(5));
+                    return;
+                }
+                self.network_waiting = false;
                 self.reconnect_at = None;
                 self.emit(Phase::Preparing, "auto-reconnecting".into(), None);
                 self.connect().await;
@@ -959,7 +984,7 @@ impl Core {
                 self.emit(
                     Phase::Degraded,
                     format!(
-                        "Tunnel traffic check failed ({}/2); connection is not healthy",
+                        "Tunnel traffic check failed ({}/2): {result:?}",
                         self.health_failures
                     ),
                     None,
@@ -996,6 +1021,7 @@ impl Core {
                 _ => None,
             };
             let expected_exit = self.trusted_exit.clone();
+            let logger = self.logger.clone();
             self.emit(
                 Phase::Verifying,
                 "Full-Tunnel verification started".into(),
@@ -1004,6 +1030,7 @@ impl Core {
             self.health_task = Some(tokio::spawn(async move {
                 tokio::time::timeout(Duration::from_secs(health.timeout()), async move {
                     if let Some((health_port, addresses)) = tun_details {
+                        let began = Instant::now();
                         let verdict = crate::diag::verify_full_tunnel(
                             health_port,
                             &addresses,
@@ -1012,6 +1039,7 @@ impl Core {
                             Duration::from_secs(health.timeout()),
                         )
                         .await;
+                        logger.info(format!("Full-Tunnel check finished in {} ms; adapter traffic includes concurrent applications:\n{}", began.elapsed().as_millis(), verdict.report()));
                         anyhow::ensure!(verdict.ok(), "{}", verdict.report());
                         if let Some(expected) = expected_exit {
                             anyhow::ensure!(
@@ -1039,11 +1067,40 @@ impl Core {
     async fn teardown_with(&mut self, kill_switch: bool) {
         if !kill_switch {
             crate::kill_switch::clear();
-            let _ = self.events.send(EngineEvent::Protection("Released".into()));
         }
         #[cfg(target_os = "linux")]
         if let Some(tunnel) = self.linux_tunnel.take() {
-            tunnel.stop().await;
+            if let Err(error) = tunnel.stop().await {
+                self.logger.warn(format!("{error:#}"));
+                self.linux_recovery_needed = true;
+                let _ = self.events.send(EngineEvent::Protection(
+                    "Cleanup unverified; use Disconnect / release protection".into(),
+                ));
+            }
+        }
+        #[cfg(target_os = "linux")]
+        if !kill_switch && self.linux_recovery_needed {
+            match crate::linux_tunnel::LinuxTunnel::recover().await {
+                Ok(()) => {
+                    self.linux_recovery_needed = false;
+                    let _ = self.events.send(EngineEvent::Protection(
+                        "Released by emergency recovery".into(),
+                    ));
+                }
+                Err(error) => {
+                    self.logger.error(format!("{error:#}"));
+                    let _ = self.events.send(EngineEvent::Protection(
+                        "Recovery failed; administrator recovery required".into(),
+                    ));
+                }
+            }
+        }
+        #[cfg(target_os = "linux")]
+        let released = !kill_switch && !self.linux_recovery_needed;
+        #[cfg(not(target_os = "linux"))]
+        let released = !kill_switch;
+        if released {
+            let _ = self.events.send(EngineEvent::Protection("Released".into()));
         }
         if let Some(task) = self.health_task.take() {
             task.abort();
@@ -1130,11 +1187,14 @@ mod health_tests {
             last: TrafficSnapshot::default(),
             last_tick: Instant::now(),
             retries: 0,
+            network_waiting: false,
             reconnect_at: None,
             recovery_endpoint: None,
             recovery_server_id: None,
             #[cfg(target_os = "linux")]
             linux_tunnel: None,
+            #[cfg(target_os = "linux")]
+            linux_recovery_needed: false,
             full_tunnel: true,
             trusted_exit: None,
             last_health: Instant::now(),

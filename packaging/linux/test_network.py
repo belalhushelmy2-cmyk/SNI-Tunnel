@@ -126,3 +126,22 @@ class HealthVerificationTests(unittest.TestCase):
         sock.recv.side_effect = [b'\x05', b'']
         with self.assertRaisesRegex(RuntimeError, 'closed'):
             network.receive_exact(sock, 2)
+
+class DnsAnswerTests(unittest.TestCase):
+    def query(self):
+        return b'\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x07example\x03com\x00\x00\x01\x00\x01'
+
+    def answer(self):
+        answer = bytearray(self.query())
+        answer[2:4] = b'\x81\x80'
+        answer[7] = 1
+        return bytes(answer) + b'\xc0\x0c\x00\x01\x00\x01\x00\x00\x00\x3c\x00\x04\x5d\xb8\xd8\x22'
+
+    def test_complete_a_record_is_accepted(self):
+        self.assertTrue(network.dns_answer_valid(self.answer(), self.query()))
+
+    def test_claimed_but_missing_answer_is_rejected(self):
+        self.assertFalse(network.dns_answer_valid(self.answer()[:-4], self.query()))
+
+    def test_wrong_transaction_is_rejected(self):
+        self.assertFalse(network.dns_answer_valid(b'\x00\x00' + self.answer()[2:], self.query()))

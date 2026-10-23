@@ -736,6 +736,51 @@ mod certificate_retry_tests {
     }
 }
 
+fn valid_dns_answer(answer: &[u8], query: &[u8]) -> bool {
+    if answer.len() < query.len()
+        || answer[..2] != query[..2]
+        || answer[2] & 0x80 == 0
+        || answer[3] & 15 != 0
+        || answer[4..6] != [0, 1]
+        || answer[12..query.len()] != query[12..]
+    {
+        return false;
+    }
+    let mut offset = query.len();
+    for _ in 0..u16::from_be_bytes([answer[6], answer[7]]) {
+        loop {
+            let Some(&length) = answer.get(offset) else {
+                return false;
+            };
+            offset += 1;
+            if length == 0 {
+                break;
+            }
+            if length & 192 == 192 {
+                offset += 1;
+                break;
+            }
+            if length > 63 {
+                return false;
+            }
+            offset += usize::from(length);
+        }
+        let Some(header) = answer.get(offset..offset + 10) else {
+            return false;
+        };
+        let length = u16::from_be_bytes([header[8], header[9]]) as usize;
+        offset += 10;
+        if answer.get(offset..offset + length).is_none() {
+            return false;
+        }
+        if header[..4] == [0, 1, 0, 1] && length == 4 {
+            return true;
+        }
+        offset += length;
+    }
+    false
+}
+
 /// Fresh UDP DNS exchange, independent of the OS resolver cache.
 pub async fn verify_dns_datagram(resolver: std::net::SocketAddr, timeout: Duration) -> Result<()> {
     tokio::time::timeout(timeout, async {
@@ -750,11 +795,7 @@ pub async fn verify_dns_datagram(resolver: std::net::SocketAddr, timeout: Durati
         let mut answer = [0u8; 4096];
         let count = socket.recv(&mut answer).await?;
         anyhow::ensure!(
-            count >= 12
-                && answer[..2] == query[..2]
-                && answer[2] & 0x80 != 0
-                && answer[3] & 0x0f == 0
-                && answer[6..8] != [0, 0],
+            valid_dns_answer(&answer[..count], &query),
             "DNS response failed validation"
         );
         Ok(())
@@ -802,7 +843,11 @@ mod health_dns_tests {
             bytes[2] = 0x81;
             bytes[3] = if valid { 0x80 } else { 0x83 };
             bytes[7] = 1;
-            socket.send_to(&bytes[..n], peer).await.unwrap();
+            let mut response = bytes[..n].to_vec();
+            response.extend_from_slice(
+                b"\xc0\x0c\x00\x01\x00\x01\x00\x00\x00\x3c\x00\x04\x5d\xb8\xd8\x22",
+            );
+            socket.send_to(&response, peer).await.unwrap();
         });
         let result = verify_dns_datagram(address, Duration::from_secs(1)).await;
         responder.await?;

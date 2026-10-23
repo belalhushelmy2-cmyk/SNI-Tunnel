@@ -499,7 +499,12 @@ export component AppWindow inherits Window {
                 Button { text: "Export"; clicked => { root.export_logs_clicked(); } }
                 Button { text: "Clear"; clicked => { root.clear_logs_clicked(); } }
             }
-            Text { text: root.notification-history; color: Theme.muted; font-size: 10px; wrap: word-wrap; max-height: 90px; overflow: elide; }
+            ScrollView {
+                height: 80px; vertical-stretch: 0;
+                content-width: parent.width;
+                content-height: notification-lines.preferred-height;
+                notification-lines := Text { text: root.notification-history; color: Theme.muted; font-size: 10px; wrap: word-wrap; }
+            }
             Text { text: "Times: UTC. Advanced core logging requires reconnecting. " + root.log-status; color: Theme.muted; font-size: 11px; }
             LineEdit { text <=> root.log-search; placeholder-text: "Search log messages"; }
             log-view := ScrollView {

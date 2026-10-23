@@ -1,14 +1,16 @@
-# 2.1.0 validation — work in progress
+# 2.1.0 validation
 
 Executed locally on Linux:
 - Rust: 129 tests passed (118 library + 11 integration); 5 existing live/opt-in tests ignored.
-- Python Linux regression suite: 19 tests passed.
+- Python Linux regression suite: 22 tests passed; offline installer regression: 1 test passed.
 - Isolated Linux firewall packet test: IPv4/IPv6 fallback blocked, loopback/TUN allowed, adapter deletion still blocked, tampering detected, cleanup restored access and preserved an unrelated nftables table.
+- UI checks at 100% and 150%: first-click navigation, five independent server rows, compact layout and scrolling passed.
+- Mako Freedesktop notification service responds to GetServerInformation; visual delivery not asserted.
 - Windows GNU library/binary/tests cross-check compiled successfully. This is not Windows runtime verification.
 
-Pending release gates:
-- Final source regression, layout and package checks.
-- Windows Actions native tests, live WFP test, installer build and payload verification.
+Required publication gates (enforced by the release workflow):
+- Final portable/GUI package checks and native package payload verification.
+- Windows Actions installer build and payload verification. Native regression and live WFP fallback/endpoint exception/replacement/cleanup tests passed on validation commit 7e9d26e; final source will repeat these gates.
 - Linux portable/DEB/AppImage build, offline dependency packaging and checksum verification.
 
 Runtime limitations: real VMess sessions, suspend/resume across physical hardware, multi-hour soak, Windows notification presentation, and all distribution/desktop combinations have not been verified by these local tests. Existing user connections were not disrupted for testing.

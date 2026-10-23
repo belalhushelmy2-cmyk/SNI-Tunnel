@@ -21,7 +21,7 @@ cat > target/zig-cc <<'EOF'
 exec zig cc -target x86_64-linux-gnu.2.30 "$@"
 EOF
 chmod +x target/zig-cc
-cmake -S target/badvpn-source -B target/badvpn-portable -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DBUILD_NOTHING_BY_DEFAULT=ON -DBUILD_TUN2SOCKS=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER="$ROOT/target/zig-cc"
+cmake --fresh -S target/badvpn-source -B target/badvpn-portable -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DBUILD_NOTHING_BY_DEFAULT=ON -DBUILD_TUN2SOCKS=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER="$ROOT/target/zig-cc"
 cmake --build target/badvpn-portable -j 4
 cp target/badvpn-portable/tun2socks/badvpn-tun2socks packaging/staging/linux/core/
 chmod +x packaging/staging/linux/core/xray packaging/staging/linux/core/badvpn-tun2socks

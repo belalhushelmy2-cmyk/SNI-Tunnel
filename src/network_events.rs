@@ -66,3 +66,44 @@ impl Drop for Watch {
         }
     }
 }
+
+#[cfg(windows)]
+pub fn physical_available() -> bool {
+    use windows_sys::Win32::NetworkManagement::IpHelper::*;
+    // u64 provides the alignment required by the adapter structures.
+    let mut size = 16384u32;
+    for _ in 0..3 {
+        let mut storage = vec![0u64; (size as usize).div_ceil(8)];
+        let head = storage.as_mut_ptr().cast::<IP_ADAPTER_ADDRESSES_LH>();
+        let status = unsafe {
+            GetAdaptersAddresses(
+                0,
+                GAA_FLAG_INCLUDE_GATEWAYS,
+                std::ptr::null(),
+                head,
+                &mut size,
+            )
+        };
+        if status == 111 {
+            continue;
+        } // ERROR_BUFFER_OVERFLOW: adapter list changed.
+        if status != 0 {
+            return true;
+        } // Unknown is not evidence of offline state.
+        let mut current = head;
+        while !current.is_null() {
+            let adapter = unsafe { &*current };
+            // The app installs split routes, not a default gateway on its TUN.
+            // A working non-loopback adapter with a gateway is the uplink signal.
+            if adapter.OperStatus == 1
+                && adapter.IfType != 24
+                && !adapter.FirstGatewayAddress.is_null()
+            {
+                return true;
+            }
+            current = adapter.Next;
+        }
+        return false;
+    }
+    true
+}

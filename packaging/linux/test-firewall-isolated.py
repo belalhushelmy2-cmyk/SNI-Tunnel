@@ -12,7 +12,7 @@ import network
 
 if '--isolated-child' not in sys.argv:
     env = dict(os.environ, SNI_TEST_PARENT_NETNS=os.readlink('/proc/self/ns/net'))
-    raise SystemExit(subprocess.run(['unshare', '--user', '--map-root-user', '--net', sys.executable, __file__, '--isolated-child'], env=env).returncode)
+    raise SystemExit(subprocess.run(['unshare', *([] if os.geteuid() == 0 else ['--user', '--map-root-user']), '--net', sys.executable, __file__, '--isolated-child'], env=env).returncode)
 assert os.geteuid() == 0 and os.environ.get('SNI_TEST_PARENT_NETNS') and os.readlink('/proc/self/ns/net') != os.environ['SNI_TEST_PARENT_NETNS'], 'Requires isolated network namespace' 
 
 def ip(*args):

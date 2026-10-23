@@ -290,6 +290,20 @@ pub fn run(cfg: Arc<Mutex<AppConfig>>, logger: Logger) -> Result<i32> {
                     } else if s.phase == Phase::Disconnected {
                         ui.set_health_retries("0".into());
                     }
+                    if matches!(s.phase, Phase::Degraded | Phase::Error)
+                        && ["bypass", "protection", "routing", "Kill switch"]
+                            .iter()
+                            .any(|word| s.detail.contains(word))
+                    {
+                        if let Some(message) = notifications
+                            .borrow_mut()
+                            .routing_warning(std::time::Instant::now())
+                        {
+                            if cfg.lock().unwrap().settings.health.notifications {
+                                let _ = notification_sender.try_send(message);
+                            }
+                        }
+                    }
                     if let Some((title, body)) = notifications
                         .borrow_mut()
                         .transition(s.phase, std::time::Instant::now())
@@ -334,7 +348,9 @@ pub fn run(cfg: Arc<Mutex<AppConfig>>, logger: Logger) -> Result<i32> {
                             "TUN / DNS / IPv4 / IPv6: awaiting verification".into(),
                         );
                     }
-                    ui.set_connection_live(s.phase.forwarding());
+                    let still_connected = s.phase.forwarding()
+                        || (s.phase == Phase::Verifying && state.is_connected());
+                    ui.set_connection_live(still_connected);
                     ui.set_connection_busy(!matches!(s.phase, Phase::Disconnected | Phase::Error));
                     ui.set_phase(s.phase.label().into());
                     ui.set_detail(s.detail.into());
@@ -343,7 +359,7 @@ pub fn run(cfg: Arc<Mutex<AppConfig>>, logger: Logger) -> Result<i32> {
                         ui.set_external_ip(ip.into());
                     }
                     let was = state.is_connected();
-                    let now = s.phase.forwarding();
+                    let now = still_connected;
                     if was != now {
                         state.set_connected(now);
                         if now {

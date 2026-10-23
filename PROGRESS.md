@@ -1021,3 +1021,14 @@ Published v0.4.1 to https://github.com/belalhushelmy2-cmyk/SNI-Tunnel/releases/t
 - Linux nftables output guard with real isolated packet tests; Windows WFP session guard cross-compiles, native CI test pending.
 - Dashboard, notifications/history, emergency disconnect, bounded reconnect jitter.
 - No release published yet; required CI/package gates remain.
+
+### Validation and recovery follow-up
+- All 129 local Rust tests passed; 22 Linux Python tests and isolated packet tests passed; 100%/150% UI checks passed.
+- Windows Actions native regression and actual WFP fallback/recovery tests passed on 7e9d26e.
+- Corrected helper-crash emergency cleanup reporting, added fresh DNS record validation, retained connected presentation during periodic checks, and made CMake reconfiguration reproducible.
+- Remaining: final source/package validation, artifacts/checksums and gated GitHub publication.
+
+### CI checkpoint
+- Validation run 39957998051: Windows regression, live WFP test, EXE build and installer payload checks passed.
+- Linux CI regression/formatting/Clippy passed; isolated test launch was blocked by root access to the checkout. The workflow now copies only the public test/helper into a readable temporary directory before entering a separate network namespace. No security restriction is disabled.
+- Final publication remains gated on successful rerun of every required job.

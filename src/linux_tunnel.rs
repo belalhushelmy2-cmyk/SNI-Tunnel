@@ -173,19 +173,42 @@ impl LinuxTunnel {
             .flatten()
             .map(|s| s.code().unwrap_or(-1))
     }
-    pub async fn stop(mut self) {
+    pub async fn stop(mut self) -> Result<()> {
         if let Some(mut input) = self.stdin.take() {
             let _ = input.write_all(b"stop\n").await;
             let _ = input.flush().await;
         }
-        if tokio::time::timeout(std::time::Duration::from_secs(35), self.child.wait())
-            .await
-            .is_err()
-        {
+        let clean = matches!(tokio::time::timeout(std::time::Duration::from_secs(35), self.child.wait()).await,
+            Ok(Ok(status)) if status.success());
+        if !clean {
             let _ = self.child.kill().await;
         }
         self.reader.abort();
         let _ = std::fs::remove_file(&self.config);
+        anyhow::ensure!(
+            clean,
+            "Privileged helper stopped unexpectedly; protection cleanup needs recovery"
+        );
+        Ok(())
+    }
+    pub async fn recover() -> Result<()> {
+        let helper = std::env::current_exe()?
+            .parent()
+            .unwrap()
+            .join("network.py");
+        let mut command = tokio::process::Command::new("pkexec");
+        command
+            .args(["/usr/bin/python3"])
+            .arg(helper)
+            .arg("--recover")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .kill_on_drop(true);
+        let result =
+            tokio::time::timeout(std::time::Duration::from_secs(60), command.status()).await??;
+        anyhow::ensure!(result.success(), "Emergency recovery failed or authorization was cancelled; run the installed network.py --recover with administrator rights");
+        Ok(())
     }
 }
 #[cfg(test)]

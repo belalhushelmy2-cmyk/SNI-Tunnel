@@ -47,7 +47,12 @@ jobs:
       - name: Python profile/editor/network regression suite
         run: xvfb-run -a python3 -m unittest discover -s packaging/linux -p 'test_*.py'
       - name: Isolated Linux firewall packet tests
-        run: sudo python3 packaging/linux/test-firewall-isolated.py
+        run: |
+          firewall_test_dir=$(mktemp -d /tmp/sni-firewall-test.XXXXXX)
+          trap 'rm -rf "$firewall_test_dir"' EXIT
+          chmod 755 "$firewall_test_dir"
+          install -m 644 packaging/linux/network.py packaging/linux/test-firewall-isolated.py "$firewall_test_dir/"
+          sudo env PYTHONDONTWRITEBYTECODE=1 python3 "$firewall_test_dir/test-firewall-isolated.py"
       - name: Offline installer regression
         run: python3 -m unittest discover -s packaging/offline -p 'test_*.py'
       - name: Native Slint first-click, layout and scrolling checks
@@ -135,6 +140,7 @@ jobs:
         run: |
           & target/release/sni-tunnel.exe --help
           if ($LASTEXITCODE -ne 0) { throw 'Windows executable startup failed' }
+          if ((Get-Item target/release/sni-tunnel.exe).VersionInfo.ProductVersion -ne '2.1.0') { throw 'Windows version resource mismatch' }
           $seven = Join-Path $env:ProgramFiles '7-Zip/7z.exe'
           & $seven x -y releases/v2/windows/SNI-Tunnel-V2-Setup-x64.exe '-otarget/installer-check'
           if ($LASTEXITCODE -ne 0) { throw 'Installer extraction failed' }
