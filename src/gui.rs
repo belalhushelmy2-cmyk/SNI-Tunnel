@@ -205,6 +205,9 @@ pub fn run(cfg: Arc<Mutex<AppConfig>>, logger: Logger) -> Result<i32> {
     let had_tray = std::cell::Cell::new(tray::is_available());
     let last_tab = std::cell::Cell::new(-1i32);
     let last_mode = std::cell::RefCell::new(String::new());
+    let notifications = Rc::new(RefCell::new(crate::health::Notifications::default()));
+    let notification_sender = crate::health::worker(logger.clone());
+    let verified_at = Rc::new(RefCell::new(None::<std::time::Instant>));
     let timer = Timer::default();
     timer.start(TimerMode::Repeated, Duration::from_millis(150), move || {
         let Some(ui) = ui_weak.upgrade() else {
@@ -256,9 +259,81 @@ pub fn run(cfg: Arc<Mutex<AppConfig>>, logger: Logger) -> Result<i32> {
             }
         }
 
+        if let Some(at) = *verified_at.borrow() {
+            let elapsed = at.elapsed().as_secs();
+            let health = cfg.lock().unwrap().settings.health.clone();
+            ui.set_health_schedule(
+                format!(
+                    "Last success: {elapsed}s ago · Next periodic check: {}",
+                    if health.enabled {
+                        format!("{}s", health.interval().saturating_sub(elapsed))
+                    } else {
+                        "disabled".into()
+                    }
+                )
+                .into(),
+            );
+        }
         loop {
             match eng_rx.try_recv() {
                 Ok(EngineEvent::Status(s)) => {
+                    if s.phase == Phase::Reconnecting {
+                        if let Some(count) = s
+                            .detail
+                            .to_lowercase()
+                            .split("attempt ")
+                            .nth(1)
+                            .and_then(|s| s.split_whitespace().next())
+                        {
+                            ui.set_health_retries(count.into());
+                        }
+                    } else if s.phase == Phase::Disconnected {
+                        ui.set_health_retries("0".into());
+                    }
+                    if let Some((title, body)) = notifications
+                        .borrow_mut()
+                        .transition(s.phase, std::time::Instant::now())
+                    {
+                        if cfg.lock().unwrap().settings.health.notifications {
+                            let _ = notification_sender.try_send((title, body));
+                        }
+                    }
+                    ui.set_notification_history(
+                        notifications
+                            .borrow()
+                            .history
+                            .iter()
+                            .rev()
+                            .cloned()
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                            .into(),
+                    );
+                    ui.set_health_state(
+                        match s.phase {
+                            Phase::FullForwarding => "Healthy",
+                            Phase::Verifying => "Checking",
+                            Phase::Degraded => "Degraded",
+                            Phase::Reconnecting => "Reconnecting",
+                            Phase::Error => "Failed",
+                            _ => "Not verified",
+                        }
+                        .into(),
+                    );
+                    if s.phase == Phase::FullForwarding {
+                        *verified_at.borrow_mut() = Some(std::time::Instant::now());
+                        ui.set_health_checks(
+                            "TUN: verified · DNS: passed · IPv4: passed · IPv6: protection checked"
+                                .into(),
+                        );
+                    } else if matches!(
+                        s.phase,
+                        Phase::Disconnected | Phase::Error | Phase::Degraded
+                    ) {
+                        ui.set_health_checks(
+                            "TUN / DNS / IPv4 / IPv6: awaiting verification".into(),
+                        );
+                    }
                     ui.set_connection_live(s.phase.forwarding());
                     ui.set_connection_busy(!matches!(s.phase, Phase::Disconnected | Phase::Error));
                     ui.set_phase(s.phase.label().into());
@@ -290,6 +365,7 @@ pub fn run(cfg: Arc<Mutex<AppConfig>>, logger: Logger) -> Result<i32> {
                         refresh_servers(&ui, cfg, state);
                     }
                 }
+                Ok(EngineEvent::Protection(text)) => ui.set_health_protection(text.into()),
                 Ok(EngineEvent::Stats(t)) => {
                     let mut history = traffic_history.borrow_mut();
                     if t.uptime_secs > 0 || t.up > 0 || t.down > 0 {
@@ -916,6 +992,31 @@ fn wire_callbacks(
             c.settings.kill_switch = ui.get_kill_switch();
             c.settings.netmod_compatibility = ui.get_netmod_compatibility();
             c.settings.auto_reconnect = ui.get_auto_reconnect();
+            let parse = |text: slint::SharedString, low: u64, high: u64| {
+                text.trim()
+                    .parse::<u64>()
+                    .ok()
+                    .filter(|n| (low..=high).contains(n))
+            };
+            let health = match (
+                parse(ui.get_health_interval(), 15, 3600),
+                parse(ui.get_health_timeout(), 3, 30),
+                parse(ui.get_health_attempts(), 1, 10),
+            ) {
+                (Some(interval), Some(timeout), Some(attempts)) => crate::model::HealthSettings {
+                    enabled: ui.get_health_enabled(),
+                    notifications: ui.get_health_notifications(),
+                    interval_secs: interval,
+                    timeout_secs: timeout,
+                    reconnect_attempts: attempts as u32,
+                },
+                _ => {
+                    *c = previous;
+                    ui.set_detail("Health settings are outside the displayed ranges".into());
+                    return;
+                }
+            };
+            c.settings.health = health;
             c.settings.minimize_to_tray = ui.get_minimize_to_tray();
             c.settings.log_level = ui.get_log_level().to_string();
             c.settings.custom_dns = ui.get_custom_dns().to_string();
@@ -1230,6 +1331,11 @@ fn apply_settings(ui: &AppWindow, cfg: &Arc<Mutex<AppConfig>>) {
     ui.set_kill_switch(c.settings.kill_switch);
     ui.set_netmod_compatibility(c.settings.netmod_compatibility);
     ui.set_auto_reconnect(c.settings.auto_reconnect);
+    ui.set_health_enabled(c.settings.health.enabled);
+    ui.set_health_notifications(c.settings.health.notifications);
+    ui.set_health_interval(c.settings.health.interval().to_string().into());
+    ui.set_health_timeout(c.settings.health.timeout().to_string().into());
+    ui.set_health_attempts(c.settings.health.attempts().to_string().into());
     ui.set_minimize_to_tray(c.settings.minimize_to_tray);
     ui.set_start_with_windows(c.settings.start_with_windows);
     ui.set_log_level(c.settings.log_level.clone().into());

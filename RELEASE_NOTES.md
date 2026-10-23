@@ -1,15 +1,17 @@
-# SNI Tunnel V2 2.0.2 — offline desktop bundles
+# SNI Tunnel V2 2.1.0 — connection health and recovery
 
-New complete offline installers for **Arch/Omarchy x86_64** and **Ubuntu 24.04 x86_64**, available as executable `.bin` files and extractable `.tar.gz` archives. Each contains SNI Tunnel, Xray, the Linux TUN helper, the AppImage, portable files, and the distribution's full runtime dependency closure, including Python, clipboard utilities, fonts, polkit and a graphical authentication agent.
+Full-Tunnel mode now checks real forwarding every 60 seconds by default. It compares an explicit VMess proxy request with an ordinary IPv4 request, validates a fresh DNS response, checks routing and IPv6 protection, and checks the session's previously verified exit. Checks run off the GUI thread and do not inherit proxy environment variables.
 
-- Arch also has a native `sni-tunnel-v2-bin` pacman package and checksum-pinned PKGBUILD. Dependencies in the offline bundle are official Arch packages verified against repository SHA256 values and package signatures.
-- Ubuntu dependency packages are downloaded and authenticated by apt. The offline installer uses only the local package repository.
-- Windows installer and portable ZIP include Xray, compatibility runtime, DLL, and TAP driver payload. Windows itself and its built-in system components remain prerequisites. TAP installation requests Administrator rights.
-- Run Linux `.bin` installers as your normal desktop user. The installer requests administrator permission for package installation, and starts a graphical authentication agent if none of the supported agents is running.
-- Existing profiles are retained. The server-list, import, tray and live TCP latency fixes from 2.0.1 remain included.
+Network changes and core exits trigger earlier checks/recovery. Automatic reconnection uses bounded backoff with jitter. The dashboard has connection health, verification timing, protection status, Verify Now, Reconnect Now and Disconnect / release protection. Settings include monitoring, interval, timeout, attempts and notifications. Notifications are grouped and retained in Activity.
 
-## Distribution compatibility
+Linux uses an application-owned nftables output guard; Windows uses a dynamic Windows Filtering Platform session. These remain independent of Xray's lifetime. Neither changes unrelated firewall rules. IPv6 internet forwarding is not claimed: this release protects IPv6 while verifying IPv4 forwarding. A small probe cannot prove every packet's route; enforcement and checks are complementary.
 
-These are distribution-specific bundles, not an entire operating system. They require an existing x86_64 graphical Linux installation with a working package manager, sudo, and kernel TUN support. On Arch, if the bundled dependencies require changing an installed system library, the installer stops and asks for a complete system update instead of performing an unsupported partial upgrade. Ubuntu offline packages target 24.04; other Debian/Ubuntu releases are not claimed compatible. The standalone DEB/AppImage/tar packages remain available; use the matching offline installer when dependencies are missing.
+## Recovery and compatibility
 
-Android is not included. It requires a separate Android VpnService, protected outbound sockets, native core integration and device testing; the desktop TUN helper cannot run on Android.
+- Manual disconnect releases protection. If the Linux privileged helper crashes, run `sudo /usr/lib/sni-tunnel-v2/network.py --recover` (or the helper beside your portable executable) to restore application-owned networking. Windows dynamic filters are removed when the application exits, avoiding permanent lockout.
+- The legacy Windows TAP compatibility backend remains available, but cannot report full-tunnel verification without an independent health inbound. Standard Wintun is the supported verified path.
+- Linux requires nftables and a working TUN kernel; native packages and distribution-specific offline bundles include the new dependencies. Linux notifications require the desktop's Freedesktop notification service (including Sway notification daemons). Windows uses native notification-area messages; OS notification preferences still apply.
+- Saved servers and explicit settings are retained. New/missing health preferences use enabled defaults; an existing disabled automatic-reconnect preference stays disabled.
+- Xray/core versions are unchanged. Previous release assets are preserved.
+
+See TEST_RESULTS.md for tests actually executed and remaining runtime limitations. Windows EXE/portable ZIP, Linux DEB/AppImage/tar, native Arch-bin package, and Arch/Ubuntu 24.04 offline .bin bundles are built by the release workflow.

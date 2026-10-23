@@ -113,6 +113,7 @@ pub struct StatsEvent {
 pub enum EngineEvent {
     Status(Status),
     Stats(StatsEvent),
+    Protection(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -192,8 +193,8 @@ pub fn spawn(cfg: Arc<Mutex<AppConfig>>, logger: Logger) -> EngineHandle {
         recovery_server_id: None,
         #[cfg(target_os = "linux")]
         linux_tunnel: None,
-        baseline_ip: None,
         full_tunnel: false,
+        trusted_exit: None,
         last_health: Instant::now(),
         health_failures: 0,
         health_task: None,
@@ -202,6 +203,15 @@ pub fn spawn(cfg: Arc<Mutex<AppConfig>>, logger: Logger) -> EngineHandle {
 
     tokio::spawn(async move {
         core.emit(Phase::Disconnected, "idle".into(), None);
+        #[cfg(windows)]
+        let _network_watch = match crate::network_events::Watch::new() {
+            Ok(watch) => Some(watch),
+            Err(error) => {
+                core.logger
+                    .warn(format!("Native network events unavailable: {error:#}"));
+                None
+            }
+        };
         let mut tick = tokio::time::interval(Duration::from_secs(1));
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
@@ -257,12 +267,12 @@ struct Core {
     #[cfg(target_os = "linux")]
     linux_tunnel: Option<crate::linux_tunnel::LinuxTunnel>,
     /// The public IP seen before the tunnel was started.
-    baseline_ip: Option<String>,
     /// Is ordinary system traffic confirmed to use the tunnel?
     full_tunnel: bool,
+    trusted_exit: Option<String>,
     last_health: Instant,
     health_failures: u8,
-    health_task: Option<tokio::task::JoinHandle<anyhow::Result<()>>>,
+    health_task: Option<tokio::task::JoinHandle<anyhow::Result<Option<String>>>>,
     /// Absolute adapter counters when the current tunnel session started.
     tun_counter_baseline: Option<(u64, u64)>,
 }
@@ -300,6 +310,7 @@ impl Core {
         }
         match c {
             Command::Connect => {
+                self.trusted_exit = None;
                 self.reconnect_at = None;
                 self.recovery_endpoint = None;
                 self.recovery_server_id = None;
@@ -307,6 +318,7 @@ impl Core {
                 self.connect().await;
             }
             Command::Disconnect => {
+                self.trusted_exit = None;
                 self.reconnect_at = None;
                 self.recovery_endpoint = None;
                 self.recovery_server_id = None;
@@ -315,6 +327,7 @@ impl Core {
                 self.emit(Phase::Disconnected, "disconnected".into(), None);
             }
             Command::Reconnect => {
+                self.trusted_exit = None;
                 self.reconnect_at = None;
                 self.recovery_endpoint = None;
                 self.recovery_server_id = None;
@@ -324,11 +337,7 @@ impl Core {
                 self.connect().await;
             }
             Command::TestConnection => self.test_connection().await,
-            Command::VerifyFullTunnel => {
-                let report = self.full_tunnel_report().await;
-                self.logger.info(format!("full tunnel report:\n{report}"));
-                self.emit(Phase::Preparing, report.replace('\n', " | "), None);
-            }
+            Command::VerifyFullTunnel => self.check_health(true).await,
             Command::RefreshIp => self.refresh_ip().await,
             Command::Shutdown => {}
         }
@@ -353,7 +362,6 @@ impl Core {
         self.tun_counter_baseline = None;
         self.full_tunnel = false;
         self.health_failures = 0;
-        self.baseline_ip = None;
         let _ = self.events.send(EngineEvent::Stats(StatsEvent::default()));
         self.emit(
             Phase::Preparing,
@@ -400,13 +408,7 @@ impl Core {
                 "Authorize the network helper; the interface stays unprivileged".into(),
                 None,
             );
-            match crate::linux_tunnel::LinuxTunnel::start(
-                &ep,
-                settings.auto_reconnect,
-                &self.logger,
-            )
-            .await
-            {
+            match crate::linux_tunnel::LinuxTunnel::start(&ep, &settings, &self.logger).await {
                 Ok(tunnel) => {
                     self.linux_tunnel = Some(tunnel);
                 }
@@ -439,20 +441,6 @@ impl Core {
         }
 
         if mode == "tun" {
-            // Remember the public IP *before* the tunnel is up, so we can
-            // prove later that ordinary traffic really changed its exit.
-            if self.baseline_ip.is_none() {
-                match netcheck::public_ip(Duration::from_secs(12)).await {
-                    Ok(ip) => {
-                        self.logger
-                            .info(format!("public IP before connecting: {ip}"));
-                        self.baseline_ip = Some(ip);
-                    }
-                    Err(e) => self.logger.warn(format!(
-                        "could not read the public IP before connecting ({e:#})"
-                    )),
-                }
-            }
             self.connect_tun(ep, settings, verify_hash).await;
             return;
         }
@@ -509,7 +497,7 @@ impl Core {
 
     /// Bring up the wintun TUN tunnel. The system proxy is deliberately left
     /// alone: the TUN captures traffic at the device level.
-    async fn connect_tun(&mut self, ep: Endpoint, settings: Settings, verify_hash: bool) {
+    async fn connect_tun(&mut self, mut ep: Endpoint, settings: Settings, verify_hash: bool) {
         if !tun::is_elevated() {
             self.emit(
                 Phase::Error,
@@ -535,9 +523,39 @@ impl Core {
             )),
         }
 
+        if let Some(address) = exclusions
+            .iter()
+            .find(|a| a.parse::<std::net::Ipv4Addr>().is_ok())
+        {
+            ep.address = address.clone();
+            self.recovery_endpoint = Some(ep.clone());
+        }
+        let endpoint_port = ep.port;
         let mode = tun::RouteMode::DefaultWithExclusions(exclusions);
         match tun::TunSession::start(ep, &settings, mode, verify_hash, &self.logger).await {
-            Ok(s) => {
+            Ok(mut s) => {
+                #[cfg(windows)]
+                if settings.kill_switch {
+                    if let Err(error) =
+                        crate::kill_switch::install(&s.device, &s.server_addrs, endpoint_port)
+                    {
+                        s.stop(&self.logger, false).await;
+                        self.emit(
+                            Phase::Error,
+                            format!("Cannot enforce kill switch: {error:#}"),
+                            None,
+                        );
+                        return;
+                    }
+                }
+                let _ = self.events.send(EngineEvent::Protection(
+                    if settings.kill_switch {
+                        "Active · WFP output filters"
+                    } else {
+                        "Disabled"
+                    }
+                    .into(),
+                ));
                 self.last = TrafficSnapshot::default();
                 self.last_tick = Instant::now();
                 self.tun_counter_baseline = tun::adapter_traffic(&s.device);
@@ -580,59 +598,7 @@ impl Core {
         };
 
         if is_tun {
-            self.emit(
-                Phase::Verifying,
-                "Verifying VMess connectivity".into(),
-                None,
-            );
-            match tun::verify_through_tun(tun::VERIFY_URL, Duration::from_secs(25)).await {
-                Ok(r) if r.status == 200 => {
-                    self.emit(
-                        Phase::Forwarding,
-                        format!("VMess connectivity verified ({} ms)", r.ms),
-                        r.egress_ip,
-                    );
-                    // A tunnel-bound request only proves the adapter works.
-                    // Now check that *ordinary* system traffic (no proxy, no
-                    // bound source address) really leaves through the tunnel.
-                    self.verify_full_tunnel().await;
-                }
-                Ok(r) => {
-                    let detail = format!(
-                        "the tunnel answered HTTP {} - traffic may not be tunnelled",
-                        r.status
-                    );
-                    self.emit(Phase::Error, detail, None);
-                    // Never leave the device without connectivity because of a
-                    // tunnel that does not work: drop the TUN routes again.
-                    self.teardown().await;
-                }
-                Err(e) => {
-                    let detail = format!(
-                        "{}. Check server/UUID/transport/SNI (a TCP+TLS success does not \
-                         prove VMess works).",
-                        tun::TunFailure::ForwardingFailed(e.to_string()).message()
-                    );
-                    self.emit(Phase::Error, detail, None);
-                    // The TUN captures *all* traffic. With the kill switch the
-                    // routes stay in place, so nothing can escape the tunnel
-                    // while the server is unreachable.
-                    let kill = self.cfg.lock().unwrap().settings.kill_switch;
-                    self.teardown_with(kill).await;
-                    if kill {
-                        self.emit(
-                            Phase::Error,
-                            "kill switch active: traffic is blocked until the tunnel is back"
-                                .into(),
-                            None,
-                        );
-                    }
-                    let auto = self.cfg.lock().unwrap().settings.auto_reconnect;
-                    if auto {
-                        self.schedule_reconnect_inner();
-                    }
-                }
-            }
+            self.check_health(true).await;
             return;
         }
 
@@ -687,142 +653,6 @@ impl Core {
     }
 
     /// A detailed report about the current full-tunnel state.
-    async fn full_tunnel_report(&mut self) -> String {
-        let mut lines = Vec::new();
-        let is_tun = matches!(self.live, Some(Live::Tun(_)));
-        lines.push(format!(
-            "mode: {}",
-            if is_tun {
-                "TUN (full tunnel)"
-            } else {
-                "system proxy"
-            }
-        ));
-
-        // The core.
-        let core_ok = match &mut self.live {
-            Some(l) => l.core_exit_code().is_none(),
-            None => false,
-        };
-        lines.push(format!("Xray core running: {core_ok}"));
-
-        // The routes.
-        match tun::installed_routes().await {
-            Some((v4, v6)) => lines.push(format!("TUN routes installed: {v4} IPv4, {v6} IPv6")),
-            None => lines.push("TUN routes installed: not available on this platform".into()),
-        }
-
-        // The adapter counters.
-        let device = match &self.live {
-            Some(Live::Tun(t)) => Some(t.device.clone()),
-            _ => None,
-        };
-        match device.as_deref().and_then(tun::adapter_traffic) {
-            Some((rx, tx)) => lines.push(format!("TUN traffic: {rx} bytes in, {tx} bytes out")),
-            None => lines.push("TUN traffic: no adapter counters available".into()),
-        }
-
-        // The ordinary (unproxied) exit address.
-        match netcheck::public_ip(Duration::from_secs(20)).await {
-            Ok(ip) => {
-                let changed = self
-                    .baseline_ip
-                    .as_deref()
-                    .map(|b| b != ip)
-                    .unwrap_or(false);
-                lines.push(format!(
-                    "ordinary traffic exits via {ip} (changed: {changed})"
-                ));
-            }
-            Err(e) => lines.push(format!("ordinary request failed: {e:#}")),
-        }
-
-        // DNS.
-        match netcheck::system_dns_lookup("www.microsoft.com").await {
-            Ok(a) => lines.push(format!("system DNS works ({a:?})")),
-            Err(e) => lines.push(format!("system DNS failed: {e:#}")),
-        }
-
-        // IPv6.
-        lines.push(match netcheck::public_ip_v6(Duration::from_secs(15)).await {
-            Ok(ip) => format!("IPv6 exit: {ip} (route attribution not measured)"),
-            Err(_) => "IPv6 request failed: blocking, connectivity and endpoint failure are indistinguishable".into(),
-        });
-
-        lines.join("\n")
-    }
-
-    /// Verify that *ordinary* system traffic really uses the tunnel.
-    ///
-    /// The check is done by `diag::verify_full_tunnel`, which combines the
-    /// system routing table, the route of the measurement host, the byte
-    /// counters of the TUN adapter and - in the system proxy mode - the exit
-    /// address of a request through the local proxy.
-    async fn verify_full_tunnel(&mut self) {
-        let (proxy_port, server_addrs) = match &self.live {
-            // In TUN mode there is no local proxy, so the two exit addresses
-            // cannot be compared - the routing table and the adapter counters
-            // have to carry the proof.
-            Some(Live::Tun(t)) => (None, t.server_addrs.clone()),
-            Some(Live::Proxy(_)) => (
-                Some(self.cfg.lock().unwrap().settings.http_port),
-                Vec::new(),
-            ),
-            None => (None, Vec::new()),
-        };
-        let baseline = self.baseline_ip.clone();
-        let conns = match &self.live {
-            Some(Live::Tun(t)) => Some(t.conns.active()),
-            _ => None,
-        };
-        let verdict = crate::diag::verify_full_tunnel(
-            proxy_port,
-            &server_addrs,
-            baseline,
-            conns,
-            Duration::from_secs(20),
-        )
-        .await;
-
-        self.logger
-            .info(format!("full tunnel check:\n{}", verdict.report()));
-
-        if verdict.ok() {
-            self.full_tunnel = true;
-            self.logger
-                .info(format!("[{}] ok", tun::TunStage::Forwarding.label()));
-            let exit = verdict.ordinary_exit.clone().unwrap_or_default();
-            // Two events: the proof and the resulting state.
-            self.logger.event(format!(
-                "System traffic forwarding verified (ordinary traffic exits via {exit})"
-            ));
-            self.emit(
-                Phase::FullForwarding,
-                match &verdict.proxied_exit {
-                    Some(p) => format!(
-                        "FULL TUNNEL ACTIVE - ordinary traffic exits via {exit} \
-                         (the same as the proxied exit {p})"
-                    ),
-                    None => format!(
-                        "FULL TUNNEL ACTIVE - ordinary traffic exits via {exit} \
-                         (routing and forwarding verified)"
-                    ),
-                },
-                Some(exit),
-            );
-        } else {
-            self.full_tunnel = false;
-            for p in &verdict.problems {
-                self.logger.warn(format!("full tunnel check failed: {p}"));
-            }
-            self.emit(
-                Phase::Error,
-                format!("FULL TUNNEL NOT CONFIRMED: {}", verdict.problems.join("; ")),
-                None,
-            );
-        }
-    }
-
     /// The endpoint the engine is currently configured for.
     fn current_endpoint(&self) -> Endpoint {
         let cfg = self.cfg.lock().unwrap();
@@ -839,17 +669,24 @@ impl Core {
     }
 
     fn schedule_reconnect_inner(&mut self) {
-        if self.retries >= 5 {
-            self.logger
-                .warn("auto-reconnect: giving up after 5 attempts");
+        let budget = self.cfg.lock().unwrap().settings.health.attempts();
+        if self.retries >= budget {
+            self.logger.error("Recovery attempts exhausted");
+            self.reconnect_at = None;
+            self.emit(
+                Phase::Error,
+                "Recovery failed; use Reconnect to retry".into(),
+                None,
+            );
             return;
         }
         self.retries += 1;
-        let delay = 3 * (1u64 << (self.retries - 1));
-        self.reconnect_at = Some(Instant::now() + Duration::from_secs(delay));
+        let delay = (1u64 << (self.retries - 1)).min(15);
+        let jitter = u64::from(uuid::Uuid::new_v4().as_bytes()[0]);
+        self.reconnect_at = Some(Instant::now() + Duration::from_millis(delay * 1000 + jitter));
         self.emit(
             Phase::Reconnecting,
-            format!("Recovery attempt {}/5 in {delay}s", self.retries),
+            format!("Recovery attempt {}/{budget} in {delay}s", self.retries),
             None,
         );
     }
@@ -975,6 +812,11 @@ impl Core {
             let code = tunnel.exit_code();
             for line in messages {
                 self.logger.info(line.clone());
+                if line.starts_with("HEALTH: Kill switch")
+                    || line.starts_with("HEALTH: IPv4/IPv6 output guard")
+                {
+                    let _ = self.events.send(EngineEvent::Protection(line.clone()));
+                }
                 if let Some(phase) = crate::linux_tunnel::LinuxTunnel::phase(&line) {
                     if phase.forwarding() {
                         self.linux_tunnel.as_mut().unwrap().mark_connected();
@@ -1072,28 +914,46 @@ impl Core {
         {
             self.retries = 0;
         }
-        self.check_health().await;
+        let changed = crate::network_events::take_changed() || dt > 5.0;
+        self.check_health(changed && self.last_health.elapsed() > Duration::from_secs(2))
+            .await;
     }
 
     /// Poll a detached probe so Disconnect and stats remain responsive.
-    async fn check_health(&mut self) {
+    async fn check_health(&mut self, force: bool) {
         if self
             .health_task
             .as_ref()
             .is_some_and(|task| task.is_finished())
         {
             let result = self.health_task.take().unwrap().await;
-            let healthy = matches!(result, Ok(Ok(())));
+            let healthy = matches!(result, Ok(Ok(_)));
+            let exit = result
+                .as_ref()
+                .ok()
+                .and_then(|r| r.as_ref().ok())
+                .cloned()
+                .flatten();
             if healthy {
-                if self.health_failures > 0 {
+                if self.trusted_exit.is_none() {
+                    self.trusted_exit = exit.clone();
+                }
+                {
+                    self.full_tunnel = matches!(self.live, Some(Live::Tun(_)));
                     self.emit(
-                        Phase::Forwarding,
-                        "Tunnel traffic is responding again".into(),
-                        None,
+                        if self.full_tunnel {
+                            Phase::FullForwarding
+                        } else {
+                            Phase::Forwarding
+                        },
+                        "Traffic verification passed; system/proxy comparison required for full TUN status".into(),
+                        exit,
                     );
                 }
                 self.health_failures = 0;
             } else {
+                self.logger
+                    .warn(format!("Connection health check failed: {result:?}"));
                 self.health_failures += 1;
                 self.full_tunnel = false;
                 self.emit(
@@ -1114,15 +974,59 @@ impl Core {
             }
             self.last_health = Instant::now();
         }
-        let interval = if self.health_failures > 0 { 5 } else { 30 };
-        if self.health_task.is_none() && self.last_health.elapsed() >= Duration::from_secs(interval)
+        let health = self.cfg.lock().unwrap().settings.health.clone();
+        if !health.enabled && !force {
+            return;
+        }
+        let interval = if self.health_failures > 0 {
+            5
+        } else {
+            health.interval()
+        };
+        if self.health_task.is_none()
+            && (force || self.last_health.elapsed() >= Duration::from_secs(interval))
         {
             let port = match &self.live {
                 Some(Live::Proxy(s)) => Some(s.http_port),
                 Some(Live::Tun(_)) => None,
                 None => return,
             };
-            self.health_task = Some(tokio::spawn(probe_live_traffic(port)));
+            let tun_details = match &self.live {
+                Some(Live::Tun(t)) => Some((t.health_port, t.server_addrs.clone())),
+                _ => None,
+            };
+            let expected_exit = self.trusted_exit.clone();
+            self.emit(
+                Phase::Verifying,
+                "Full-Tunnel verification started".into(),
+                None,
+            );
+            self.health_task = Some(tokio::spawn(async move {
+                tokio::time::timeout(Duration::from_secs(health.timeout()), async move {
+                    if let Some((health_port, addresses)) = tun_details {
+                        let verdict = crate::diag::verify_full_tunnel(
+                            health_port,
+                            &addresses,
+                            None,
+                            None,
+                            Duration::from_secs(health.timeout()),
+                        )
+                        .await;
+                        anyhow::ensure!(verdict.ok(), "{}", verdict.report());
+                        if let Some(expected) = expected_exit {
+                            anyhow::ensure!(
+                                verdict.ordinary_exit.as_deref() == Some(expected.as_str()),
+                                "Verified exit changed from the session baseline"
+                            );
+                        }
+                        Ok(verdict.ordinary_exit)
+                    } else {
+                        probe_live_traffic(port).await.map(|_| None)
+                    }
+                })
+                .await
+                .map_err(|_| anyhow::anyhow!("Health verification timed out"))?
+            }));
         }
     }
 
@@ -1133,6 +1037,10 @@ impl Core {
     /// Tear the tunnel down. `kill_switch` keeps the tunnel routes in place so
     /// traffic cannot escape while the tunnel is down.
     async fn teardown_with(&mut self, kill_switch: bool) {
+        if !kill_switch {
+            crate::kill_switch::clear();
+            let _ = self.events.send(EngineEvent::Protection("Released".into()));
+        }
         #[cfg(target_os = "linux")]
         if let Some(tunnel) = self.linux_tunnel.take() {
             tunnel.stop().await;
@@ -1227,8 +1135,8 @@ mod health_tests {
             recovery_server_id: None,
             #[cfg(target_os = "linux")]
             linux_tunnel: None,
-            baseline_ip: None,
             full_tunnel: true,
+            trusted_exit: None,
             last_health: Instant::now(),
             health_failures: 0,
             health_task: None,
@@ -1242,10 +1150,12 @@ mod health_tests {
         for _ in 0..6 {
             let before = Instant::now();
             c.schedule_reconnect_inner();
-            delays.push(c.reconnect_at.unwrap().duration_since(before).as_secs());
+            if let Some(at) = c.reconnect_at {
+                delays.push(at.duration_since(before).as_secs());
+            }
         }
         assert_eq!(c.retries, 5);
-        assert_eq!(&delays[..5], &[3, 6, 12, 24, 48]);
+        assert_eq!(&delays[..5], &[1, 2, 4, 8, 15]);
         c.recovery_endpoint = Some(Endpoint::default());
         c.handle(Command::Disconnect).await;
         assert!(c.reconnect_at.is_none());
@@ -1255,7 +1165,7 @@ mod health_tests {
     async fn complete_probe(core: &mut Core, healthy: bool) {
         core.health_task = Some(tokio::spawn(async move {
             if healthy {
-                Ok(())
+                Ok(None)
             } else {
                 anyhow::bail!("test outage")
             }
@@ -1263,7 +1173,7 @@ mod health_tests {
         while !core.health_task.as_ref().unwrap().is_finished() {
             tokio::task::yield_now().await;
         }
-        core.check_health().await;
+        core.check_health(false).await;
     }
     #[tokio::test]
     async fn transient_outage_invalidates_full_status_but_does_not_reconnect() {

@@ -268,6 +268,38 @@ pub struct SniProfile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct HealthSettings {
+    pub enabled: bool,
+    pub interval_secs: u64,
+    pub timeout_secs: u64,
+    pub reconnect_attempts: u32,
+    pub notifications: bool,
+}
+impl Default for HealthSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            interval_secs: 60,
+            timeout_secs: 10,
+            reconnect_attempts: 5,
+            notifications: true,
+        }
+    }
+}
+impl HealthSettings {
+    pub fn interval(&self) -> u64 {
+        self.interval_secs.clamp(15, 3600)
+    }
+    pub fn timeout(&self) -> u64 {
+        self.timeout_secs.clamp(3, 30)
+    }
+    pub fn attempts(&self) -> u32 {
+        self.reconnect_attempts.clamp(1, 10)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Settings {
     /// Use installed NetMod 1.6.1 for the remote leg, with modern native TUN.
     #[serde(default)]
@@ -278,8 +310,10 @@ pub struct Settings {
     pub socks_port: u16,
     #[serde(default = "d_mode")]
     pub mode: String,
-    #[serde(default)]
+    #[serde(default = "d_true")]
     pub auto_reconnect: bool,
+    #[serde(default)]
+    pub health: HealthSettings,
     #[serde(default = "d_true")]
     pub minimize_to_tray: bool,
     #[serde(default)]
@@ -337,7 +371,8 @@ impl Default for Settings {
             http_port: DEFAULT_HTTP_PORT,
             socks_port: DEFAULT_SOCKS_PORT,
             mode: d_mode(),
-            auto_reconnect: false,
+            auto_reconnect: true,
+            health: HealthSettings::default(),
             minimize_to_tray: true,
             start_with_windows: false,
             verify_core_hash: true,
@@ -690,5 +725,35 @@ mod tests {
         };
         let ep = resolve_endpoint(&s, None);
         assert_eq!(ep.sni, "example.com");
+    }
+}
+
+#[cfg(test)]
+mod health_settings_tests {
+    use super::*;
+    #[test]
+    fn old_preferences_survive_new_health_defaults() {
+        let settings: Settings = serde_json::from_str(
+            r#"{"auto_reconnect":false,"kill_switch":false,"custom_dns":"192.0.2.53"}"#,
+        )
+        .unwrap();
+        assert!(!settings.auto_reconnect && !settings.kill_switch);
+        assert_eq!(settings.custom_dns, "192.0.2.53");
+        assert_eq!(settings.health.interval(), 60);
+        assert!(settings.health.enabled && settings.health.notifications);
+        let again: Settings =
+            serde_json::from_str(&serde_json::to_string(&settings).unwrap()).unwrap();
+        assert_eq!(again, settings);
+    }
+    #[test]
+    fn defaults_and_bounds_are_safe() {
+        assert!(Settings::default().auto_reconnect);
+        let health: HealthSettings = serde_json::from_str(
+            r#"{"interval_secs":0,"timeout_secs":999,"reconnect_attempts":999}"#,
+        )
+        .unwrap();
+        assert_eq!(health.interval(), 15);
+        assert_eq!(health.timeout(), 30);
+        assert_eq!(health.attempts(), 10);
     }
 }

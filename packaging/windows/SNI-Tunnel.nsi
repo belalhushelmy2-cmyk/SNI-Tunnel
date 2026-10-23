@@ -53,7 +53,7 @@ Section "SNI Tunnel (required)"
  CreateShortcut "$DESKTOP\SNI Tunnel V2.lnk" "$INSTDIR\sni-tunnel.exe"
  WriteRegStr HKLM "Software\SNI Tunnel V2" "InstallDir" "$INSTDIR"
  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\SNI Tunnel V2" "DisplayName" "SNI Tunnel V2"
- WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\SNI Tunnel V2" "DisplayVersion" "2.0.2"
+ WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\SNI Tunnel V2" "DisplayVersion" "2.1.0"
  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\SNI Tunnel V2" "UninstallString" '$\"$INSTDIR\Uninstall.exe$\"'
  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\SNI Tunnel V2" "DisplayIcon" "$INSTDIR\sni-tunnel.exe"
  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\SNI Tunnel V2" "NoModify" 1

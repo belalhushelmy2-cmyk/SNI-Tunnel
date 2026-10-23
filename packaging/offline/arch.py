@@ -7,8 +7,8 @@ p=argparse.ArgumentParser(); p.add_argument('--assets',type=Path,required=True);
 a.assets=a.assets.resolve(); a.output=a.output.resolve(); a.output.mkdir(parents=True,exist_ok=True)
 work=ROOT/'target/offline-arch'; work.mkdir(parents=True,exist_ok=True)
 build=work/'build'; build.mkdir(exist_ok=True)
-archive=a.assets/'sni-tunnel-v2_2.0.2_amd64.tar.gz'
-text=(ROOT/'packaging/arch/PKGBUILD').read_text().replace('2.0.1','2.0.2').replace('fee9a3bc2abebd8e2479dc19bee7b82167ea8a6e06f65154be3d62ad60840a82',hashlib.sha256(archive.read_bytes()).hexdigest())
+archive=a.assets/'sni-tunnel-v2_2.1.0_amd64.tar.gz'
+text=(ROOT/'packaging/arch/PKGBUILD').read_text().replace('2.0.1','2.1.0').replace('fee9a3bc2abebd8e2479dc19bee7b82167ea8a6e06f65154be3d62ad60840a82',hashlib.sha256(archive.read_bytes()).hexdigest())
 (build/'PKGBUILD').write_text(text); shutil.copy2(archive,build/archive.name)
 cmd=['makepkg','--nodeps','--cleanbuild','--noconfirm','--force']
 if os.getuid()==0:
@@ -19,7 +19,7 @@ app=next(build.glob('sni-tunnel-v2-bin-*.pkg.tar.zst'))
 shutil.copy2(app,a.output/app.name); shutil.copy2(build/'PKGBUILD',a.output/'PKGBUILD')
 root=work/'bundle'; packages=root/'packages'; packages.mkdir(parents=True,exist_ok=True)
 shutil.copy2(app,packages/app.name)
-for pattern in ('SNI-Tunnel-V2-2.0.2-x86_64.AppImage','sni-tunnel-v2_2.0.2_amd64.tar.gz'):
+for pattern in ('SNI-Tunnel-V2-2.1.0-x86_64.AppImage','sni-tunnel-v2_2.1.0_amd64.tar.gz'):
  for asset in a.assets.glob(pattern): shutil.copy2(asset,root/asset.name)
 db=work/'db'; (db/'local').mkdir(parents=True,exist_ok=True); (db/'sync').mkdir(exist_ok=True)
 metadata={}
@@ -33,7 +33,7 @@ for repo in ('core','extra'):
     lines=section.splitlines(); d[lines[0].strip('%')]=lines[1:]
    metadata[d['NAME'][0]]=d
 conf=work/'pacman.conf'; conf.write_text(f'[options]\nArchitecture = x86_64\nDBPath = {db}\nSigLevel = Required DatabaseOptional\n'+''.join(f'[{r}]\nServer = https://geo.mirror.pkgbuild.com/{r}/os/x86_64\n' for r in ('core','extra')))
-deps=['glibc','gcc-libs','fontconfig','libxkbcommon','libxkbcommon-x11','libxcb','libx11','libxcursor','libxrandr','libxi','wayland','python','iproute2','polkit','ca-certificates','kmod','glib2','dbus','hyprpolkitagent','wl-clipboard','xclip','ttf-dejavu']
+deps=['glibc','gcc-libs','fontconfig','libxkbcommon','libxkbcommon-x11','libxcb','libx11','libxcursor','libxrandr','libxi','wayland','python','iproute2','nftables','libnotify','polkit','ca-certificates','kmod','glib2','dbus','hyprpolkitagent','wl-clipboard','xclip','ttf-dejavu']
 lines=subprocess.check_output(['pacman','--config',str(conf),'-Sp','--noconfirm','--print-format','%n %l',*deps],text=True).splitlines()
 records=[]
 def download(line):

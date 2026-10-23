@@ -12,6 +12,8 @@ import json
 import os
 from pathlib import Path
 import re
+import struct
+import secrets
 import signal
 import socket
 import ssl
@@ -31,6 +33,9 @@ DNS_BYTES = b'# SNI Tunnel temporary DNS\nnameserver 8.8.8.8\nnameserver 8.8.4.4
 STOP = threading.Event()
 VERIFY = threading.Event()
 SECRETS = []
+PINNED_ADDRESS = {}
+EXPECTED_EXIT = None
+HEALTH = {"enabled": True, "interval_secs": 60, "timeout_secs": 10, "reconnect_attempts": 5}
 
 
 class RecoverableError(RuntimeError):
@@ -47,7 +52,25 @@ def input_watch():
 
 
 def supervise(options):
+    try:
+        supervise_loop(options)
+    except Exception:
+        if (STATE / 'firewall.json').exists() and not STOP.is_set():
+            log('ERROR: Connection stopped; firewall protection retained. Disconnect or run network.py --recover to restore access.')
+            STOP.wait()
+        raise
+    finally:
+        if STOP.is_set():
+            remove_guard()
+
+
+def supervise_loop(options):
     threading.Thread(target=input_watch, daemon=True).start()
+    if '--health-settings' in options:
+        index = options.index('--health-settings')
+        HEALTH.update(json.loads(options[index + 1]))
+        options = options[:index] + options[index + 2:]
+    budget = max(1, min(10, int(HEALTH['reconnect_attempts'])))
     recovery = "--no-recovery" not in options
     options = [x for x in options if x != "--no-recovery"]
     retries = 0
@@ -58,14 +81,43 @@ def supervise(options):
             return
         except RecoverableError as exc:
             if STOP.is_set(): return
-            if not recovery: raise
+            if not recovery:
+                if '--kill-switch' in options:
+                    log('ERROR: Tunnel failed; kill switch retained. Disconnect to restore network.')
+                    STOP.wait()
+                    remove_guard()
+                    return
+                raise
+            if not network_available():
+                log('DEGRADED: Physical network unavailable; recovery paused until the network returns')
+                while not STOP.wait(5):
+                    if network_available():
+                        break
+                if STOP.is_set(): return
             if time.monotonic() - began >= 120: retries = 0
-            if retries >= 5:
-                raise RuntimeError('Recovery stopped after 5 attempts: ' + str(exc)) from exc
-            delay = min(3 * 2 ** retries, 48)
+            if retries >= budget:
+                log('ERROR: Recovery attempts exhausted: ' + str(exc))
+                if '--kill-switch' in options:
+                    log('HEALTH: Traffic blocked; Disconnect releases protection, or run network.py --recover')
+                    STOP.wait()
+                    remove_guard()
+                    return
+                raise RuntimeError(f'Recovery stopped after {budget} attempts: ' + str(exc)) from exc
+            delay = min(2 ** retries, 15) + secrets.randbelow(251) / 1000
             retries += 1
-            log(f'RECONNECTING: {exc}; attempt {retries}/5 in {delay}s')
+            log(f'RECONNECTING: {exc}; attempt {retries}/{budget} in {delay}s')
             if STOP.wait(delay): return
+
+
+def network_available():
+    try:
+        defaults = read_json(['ip', '-j', '-4', 'route', 'show', 'default'])
+        links = read_json(['ip', '-j', 'link', 'show'])
+        ready = {link.get('ifname') for link in links
+                 if 'UP' in link.get('flags', []) and 'LOWER_UP' in link.get('flags', [])}
+        return any(r.get('dev') in ready and r.get('dev') not in (DEVICE, 'lo') for r in defaults)
+    except (OSError, RuntimeError):
+        return False
 
 
 def log(text):
@@ -116,6 +168,89 @@ def route_plan(server, uplink, gateway):
     ]
 
 
+def firewall_rules(name, address, port):
+    if not re.fullmatch(r'sni_[0-9a-f]{16}', name):
+        raise RuntimeError('Invalid application firewall identity')
+    address = str(ipaddress.IPv4Address(address))
+    port = int(port)
+    if not 1 <= port <= 65535:
+        raise RuntimeError('Invalid endpoint port')
+    # A dedicated inet table leaves every unrelated table and policy intact.
+    # No established/related bypass: pre-existing physical sockets must stop.
+    return f"""table inet {name} {{
+ chain output {{
+  type filter hook output priority -150; policy drop;
+  oifname "lo" accept
+  oifname "{DEVICE}" accept
+  ip daddr {address} tcp dport {port} accept
+  udp sport 68 udp dport 67 accept
+  ip6 daddr ff02::1:2 udp sport 546 udp dport 547 accept
+  ip6 hoplimit 255 icmpv6 type {{ nd-router-solicit, nd-neighbor-solicit, nd-neighbor-advert }} accept
+ }}
+}}
+"""
+
+
+def install_guard(address, port):
+    journal = STATE / 'firewall.json'
+    if journal.exists():
+        guard = json.loads(journal.read_text())
+        if guard['address'] != address or guard['port'] != int(port):
+            raise RuntimeError('Protected endpoint changed; disconnect before selecting another server')
+        result = command(['nft', 'list', 'table', 'inet', guard['name']], check=False)
+        if result.returncode == 0:
+            verify_guard()
+            return
+        name = guard['name']
+    else:
+        name = 'sni_' + secrets.token_hex(8)
+        private_json(journal, {'name': name, 'address': address, 'port': int(port)})
+    result = subprocess.run(['nft', '-f', '-'], input=firewall_rules(name, address, port),
+                            text=True, capture_output=True, timeout=10)
+    if result.returncode:
+        raise RuntimeError('Cannot enforce kill switch: ' + result.stderr.strip())
+    guard = {'name': name, 'address': address, 'port': int(port), 'rules': guard_snapshot(name)}
+    private_json(journal, guard)
+    log('HEALTH: IPv4/IPv6 output guard installed (loopback, tunnel, endpoint and DHCP/ND only)')
+
+
+def guard_snapshot(name):
+    document = read_json(['nft', '-j', 'list', 'table', 'inet', name])
+    entries = []
+    for entry in document.get('nftables', []):
+        if 'metainfo' in entry:
+            continue
+        for kind, value in entry.items():
+            value.pop('handle', None)
+            entries.append({kind: value})
+    return entries
+
+
+def verify_guard():
+    journal = STATE / 'firewall.json'
+    if not journal.exists():
+        return False
+    guard = json.loads(journal.read_text())
+    if not guard.get('rules') or guard_snapshot(guard['name']) != guard['rules']:
+        raise RuntimeError('Kill switch rules changed or disappeared; traffic protection is unverified')
+    return True
+
+
+def remove_guard():
+    journal = STATE / 'firewall.json'
+    if not journal.exists():
+        return
+    guard = json.loads(journal.read_text())
+    name = guard['name']
+    if not re.fullmatch(r'sni_[0-9a-f]{16}', name):
+        raise RuntimeError('Refusing to remove an unrecognized firewall table')
+    # Absence is safe; other nft errors leave the recovery record intact.
+    tables = read_json(['nft', '-j', 'list', 'tables'])
+    if any(item.get('table', {}).get('name') == name and item.get('table', {}).get('family') == 'inet' for item in tables.get('nftables', [])):
+        command(['nft', 'delete', 'table', 'inet', name])
+    journal.unlink()
+
+
 def process_token(pid):
     try:
         # Fields after the parenthesised process name begin at field 3.
@@ -157,44 +292,125 @@ def read_pipe(pipe):
         log(line.rstrip())
 
 
-def https_probe(bound=False):
-    with socket.create_connection(('1.1.1.1', 443), timeout=7,
-                                  source_address=(LOCAL, 0) if bound else None) as raw:
-        with ssl.create_default_context().wrap_socket(raw, server_hostname='1.1.1.1') as sock:
-            sock.sendall(b'GET /cdn-cgi/trace HTTP/1.1\r\nHost: 1.1.1.1\r\nConnection: close\r\n\r\n')
-            chunks = []
+def receive_exact(sock, count):
+    data = bytearray()
+    while len(data) < count:
+        part = sock.recv(count - len(data))
+        if not part:
+            raise RuntimeError('Proxy closed during handshake')
+        data.extend(part)
+    return bytes(data)
+
+
+def https_probe(host, path, socks_port=None, timeout=None):
+    timeout = timeout or max(1, min(30, int(HEALTH["timeout_secs"])) / 6)
+    # Raw sockets never consult HTTP_PROXY/HTTPS_PROXY/ALL_PROXY. The SOCKS
+    # path asks Xray to resolve the hostname, independently of system DNS.
+    destination = ('127.0.0.1', socks_port) if socks_port else socket.getaddrinfo(host, 443, socket.AF_INET, socket.SOCK_STREAM)[0][4]
+    with socket.create_connection(destination, timeout=timeout) as raw:
+        if socks_port:
+            raw.sendall(b'\x05\x01\x00')
+            if receive_exact(raw, 2) != b'\x05\x00':
+                raise RuntimeError('SOCKS authentication failed')
+            name = host.encode('ascii')
+            raw.sendall(b'\x05\x01\x00\x03' + bytes([len(name)]) + name + struct.pack('!H', 443))
+            header = receive_exact(raw, 4)
+            if header[:3] != b'\x05\x00\x00':
+                raise RuntimeError('SOCKS CONNECT failed')
+            length = {1: 4, 4: 16}.get(header[3])
+            if header[3] == 3:
+                length = receive_exact(raw, 1)[0]
+            if length is None:
+                raise RuntimeError('Invalid SOCKS address type')
+            receive_exact(raw, length + 2)
+        with ssl.create_default_context().wrap_socket(raw, server_hostname=host) as sock:
+            sock.sendall(f'GET {path} HTTP/1.0\r\nHost: {host}\r\nConnection: close\r\n\r\n'.encode())
+            response = bytearray()
             while True:
-                part = sock.recv(8192)
+                if STOP.is_set():
+                    raise RuntimeError('Verification cancelled')
+                part = sock.recv(4096)
                 if not part:
                     break
-                chunks.append(part)
-                if sum(map(len, chunks)) > 65536:
+                response.extend(part)
+                if len(response) > 16384:
                     raise RuntimeError('Oversized probe response')
-    response = b''.join(chunks)
-    if not response.startswith(b'HTTP/1.1 200'):
+    header, separator, body = bytes(response).partition(b'\r\n\r\n')
+    if not separator or header.split(b'\r\n')[0].split()[1:2] != [b'200']:
         raise RuntimeError('HTTPS probe did not return HTTP 200')
-    match = re.search(rb'(?:\r?\n)ip=([^\r\n]+)', response)
-    if not match:
-        raise RuntimeError('HTTPS probe omitted its exit address')
-    return str(ipaddress.ip_address(match[1].decode()))
+    match = re.search(rb'(?:^|\n)ip=([^\r\n]+)', body)
+    return str(ipaddress.ip_address((match[1] if match else body.strip()).decode()))
 
 
-def verify():
-    route = read_json(['ip', '-j', '-4', 'route', 'get', '1.1.1.1'])
-    if not route or route[0].get('dev') != DEVICE:
-        raise RuntimeError('System traffic is not routed through sni0 (another policy route may take precedence)')
-    bound = https_probe(True)
-    ordinary = https_probe(False)
-    if bound != ordinary:
-        raise RuntimeError('Tunnel and ordinary HTTPS exits differ')
-    query = b'\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x07example\x03com\x00\x00\x01\x00\x01'
+def verify_routes():
+    links = read_json(['ip', '-j', 'link', 'show', 'dev', DEVICE])
+    if not links or 'UP' not in links[0].get('flags', []):
+        raise RuntimeError('TUN adapter is absent or down')
+    for address in ('1.1.1.1', '8.8.8.8', *ACTIVE_DNS):
+        route = read_json(['ip', '-j', '-4', 'route', 'get', address])
+        if not route or route[0].get('dev') != DEVICE:
+            raise RuntimeError('IPv4 routing bypasses the TUN')
+    v6 = read_json(['ip', '-j', '-6', 'route', 'show', 'table', 'main'])
+    blocked = {r.get('dst') for r in v6 if r.get('type') == 'unreachable'
+               and str(r.get('metric')) == METRIC}
+    if not {'::/1', '8000::/1'} <= blocked:
+        raise RuntimeError('IPv6 protection routes are missing')
+
+
+def verify(socks_port):
+    def expired(*_):
+        raise TimeoutError('Full-Tunnel verification exceeded its time budget')
+    previous = signal.signal(signal.SIGALRM, expired)
+    signal.setitimer(signal.ITIMER_REAL, max(3, min(30, int(HEALTH['timeout_secs']))))
+    try:
+        return verify_once(socks_port)
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+
+def verify_once(socks_port):
+    global EXPECTED_EXIT
+    began = time.monotonic()
+    log('VERIFYING: Full-Tunnel verification started')
+    verify_routes()
+    protected = verify_guard()
+    log('HEALTH: Kill switch verified' if protected else 'HEALTH: Kill switch disabled')
+    log('HEALTH: TUN adapter and IPv4/IPv6 routing verified')
+    ordinary = None
+    errors = []
+    for host, path in [('1.1.1.1', '/cdn-cgi/trace'), ('api.ipify.org', '/')]:
+        try:
+            # Check system route to every resolved probe address before sending.
+            for item in socket.getaddrinfo(host, 443, socket.AF_INET, socket.SOCK_STREAM):
+                route = read_json(['ip', '-j', '-4', 'route', 'get', item[4][0]])
+                if not route or route[0].get('dev') != DEVICE:
+                    raise RuntimeError('Probe route bypasses TUN')
+            proxied = https_probe(host, path, socks_port)
+            ordinary = https_probe(host, path)
+            if proxied != ordinary:
+                raise RuntimeError('Explicit proxy and system exits differ')
+            break
+        except (OSError, RuntimeError, ValueError) as exc:
+            errors.append(str(exc))
+            ordinary = None
+    if ordinary is None:
+        raise RuntimeError('Independent traffic checks failed: ' + '; '.join(errors))
+    log('HEALTH: Explicit proxy and system HTTPS tests passed')
+    transaction = os.urandom(2)
+    query = transaction + b'\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x07example\x03com\x00\x00\x01\x00\x01'
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:
         udp.bind((LOCAL, 0))
-        udp.settimeout(7)
+        udp.settimeout(max(1, min(3, int(HEALTH["timeout_secs"]) / 3)))
         udp.sendto(query, (ACTIVE_DNS[0], 53))
         answer, peer = udp.recvfrom(4096)
-        if peer[0] != ACTIVE_DNS[0] or len(answer) < 12 or answer[:2] != query[:2] or not answer[2] & 128:
+        if (peer != (ACTIVE_DNS[0], 53) or len(answer) < 12 or answer[:2] != transaction
+                or not answer[2] & 128 or answer[3] & 15 or answer[6:8] == b'\x00\x00'):
             raise RuntimeError('UDP DNS verification failed')
+    if EXPECTED_EXIT is not None and ordinary != EXPECTED_EXIT:
+        raise RuntimeError('Verified exit changed from the session baseline')
+    EXPECTED_EXIT = ordinary
+    log(f'HEALTH: DNS forwarding verified; checks completed in {time.monotonic() - began:.2f}s')
     return ordinary
 
 
@@ -209,9 +425,14 @@ def backend(options, recover_only=False):
     journal = STATE / 'state.json'
     if journal.exists():
         if not recover(json.loads(journal.read_text())):
+            if recover_only:
+                remove_guard()
+                log('Recovery complete; external DNS retained and original DNS kept in journal')
+                return
             raise RuntimeError('Review /run/sni-tunnel/state.json before retrying; external DNS changes were preserved.')
         journal.unlink()
     if recover_only:
+        remove_guard()
         log('Recovery complete')
         return
     if not Path('/dev/net/tun').exists():
@@ -238,7 +459,7 @@ def backend(options, recover_only=False):
         config = json.loads(Path(options[index + 1]).read_text())
         config['inbounds'][0]['port'] = port
     else:
-        config = json.loads(command([str(ROOT / 'sni-tunnel'), 'linux-config', '--socks-port', str(port)] + options).stdout)
+        config = json.loads(command([str(ROOT / 'sni-tunnel'), 'linux-config', '--socks-port', str(port)] + [x for x in options if x != '--kill-switch']).stdout)
     global ACTIVE_DNS
     configured_dns = config.get('dns', {}).get('servers', [])
     if configured_dns:
@@ -253,7 +474,10 @@ def backend(options, recover_only=False):
     server = outbound['settings']['vnext'][0]
     SECRETS.extend(u['id'] for u in server['users'])
     try:
-        address = socket.getaddrinfo(server['address'], server['port'], socket.AF_INET, socket.SOCK_STREAM)[0][4][0]
+        key = (server['address'], server['port'])
+        if key not in PINNED_ADDRESS:
+            PINNED_ADDRESS[key] = socket.getaddrinfo(server['address'], server['port'], socket.AF_INET, socket.SOCK_STREAM)[0][4][0]
+        address = PINNED_ADDRESS[key]
     except OSError as exc:
         raise RecoverableError(f'Server DNS unavailable: {exc}') from exc
     route_result = command(['ip', '-j', '-4', 'route', 'get', address], check=False)
@@ -293,6 +517,8 @@ def backend(options, recover_only=False):
     signal.signal(signal.SIGINT, lambda *_: STOP.set())
     try:
         command([str(ROOT / 'core/xray'), 'run', '-test', '-c', str(config_path)])
+        if '--kill-switch' in options:
+            install_guard(address, server['port'])
         core = spawn([str(ROOT / 'core/xray'), 'run', '-c', str(config_path)])
         for _ in range(50):
             if core.poll() is not None or STOP.is_set():
@@ -347,26 +573,44 @@ def backend(options, recover_only=False):
             if STOP.is_set():
                 return
             try:
-                exit_ip = verify()
+                exit_ip = verify(port)
                 break
-            except Exception:
+            except Exception as exc:
+                log(f'DEGRADED: Initial verification failed: {exc}')
                 if attempt == 2:
-                    raise RecoverableError('Initial forwarding verification failed')
+                    raise RecoverableError(f'Initial forwarding verification failed: {exc}') from exc
                 time.sleep(1)
-        log('CONNECTED: HTTPS and UDP verified; exit ' + exit_ip)
+        log('CONNECTED: IPv4 proxy/system HTTPS and UDP DNS verified; IPv6 blocked; exit ' + exit_ip)
         failures = 0
+        VERIFY.clear()
         last_check = time.monotonic()
+        last_wall = time.time()
+        # Netlink events via iproute2: no DBus/NetworkManager assumption on Sway.
+        monitor = subprocess.Popen(['ip', 'monitor', 'link', 'route', 'address'],
+                                   stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        children.append(monitor)
+        token = process_token(monitor.pid)
+        if token:
+            state["children"].append({"pid": monitor.pid, "token": token})
+            save()
+        def changed():
+            for _ in monitor.stdout:
+                VERIFY.set()
+        threading.Thread(target=changed, daemon=True).start()
         while not STOP.wait(.5):
+            wall = time.time()
+            if wall - last_wall > 5:
+                VERIFY.set()  # wake from sleep or a delayed scheduler
+            last_wall = wall
             if any(p.poll() is not None for p in children):
                 dead = next(p for p in children if p.poll() is not None)
                 raise RecoverableError(f'{Path(dead.args[0]).name} exited (code {dead.returncode}); restoring networking')
-            requested = VERIFY.is_set()
-            if requested or time.monotonic() - last_check > (5 if failures else 30):
+            requested = VERIFY.is_set() and time.monotonic() - last_check >= 2
+            if requested or (HEALTH['enabled'] and time.monotonic() - last_check > (5 if failures else max(15, min(3600, int(HEALTH['interval_secs']))))):
                 VERIFY.clear()
                 try:
-                    checked_ip = verify()
-                    if requested or failures:
-                        log('VERIFIED: full tunnel HTTPS and UDP DNS passed; exit ' + checked_ip)
+                    checked_ip = verify(port)
+                    log('VERIFIED: IPv4 proxy/system HTTPS and UDP DNS passed; IPv6 blocked; exit ' + checked_ip)
                     failures = 0
                 except (OSError, RuntimeError) as exc:
                     failures += 1
@@ -388,11 +632,20 @@ def backend(options, recover_only=False):
         if recover(state):
             journal.unlink(missing_ok=True)
         config_path.unlink(missing_ok=True)
+        if STOP.is_set():
+            remove_guard()
         log('DISCONNECTED: owned routes removed; DNS restored where unchanged by other software')
 
 
 if __name__ == '__main__':
     try:
+        import fcntl
+        if os.geteuid() != 0:
+            raise RuntimeError('Network helper requires administrator permission')
+        STATE.mkdir(mode=0o700, parents=True, exist_ok=True)
+        os.chmod(STATE, 0o700)
+        supervisor_lock = open(STATE / 'supervisor.lock', 'a')
+        fcntl.flock(supervisor_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         if sys.argv[1:] == ['--recover']:
             backend([], recover_only=True)
         else:

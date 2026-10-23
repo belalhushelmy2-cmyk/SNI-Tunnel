@@ -106,16 +106,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ui.on_use_server(move |source| used_callback.set(source));
     for index in 0..5 {
         used.set(-1);
-        let position = LogicalPosition::new(588., 284. + index as f32 * 88.);
-        main.dispatch_event(WindowEvent::PointerMoved { position });
-        main.dispatch_event(WindowEvent::PointerPressed {
-            position,
-            button: PointerEventButton::Left,
-        });
-        main.dispatch_event(WindowEvent::PointerReleased {
-            position,
-            button: PointerEventButton::Left,
-        });
+        // Fontconfig may resolve sans-serif to a wider user-selected font.
+        // Search the action area while still requiring the correct row callback.
+        for x in (450..650).step_by(8) {
+            let position = LogicalPosition::new(x as f32, 284. + index as f32 * 88.);
+            main.dispatch_event(WindowEvent::PointerMoved { position });
+            main.dispatch_event(WindowEvent::PointerPressed {
+                position,
+                button: PointerEventButton::Left,
+            });
+            main.dispatch_event(WindowEvent::PointerReleased {
+                position,
+                button: PointerEventButton::Left,
+            });
+            if used.get() >= 0 {
+                break;
+            }
+        }
         assert_eq!(
             used.get(),
             index,
@@ -128,16 +135,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut compact_rows = std::collections::BTreeSet::new();
     for y in (240..700).step_by(10) {
         used.set(-1);
-        let position = LogicalPosition::new(588., y as f32);
-        main.dispatch_event(WindowEvent::PointerMoved { position });
-        main.dispatch_event(WindowEvent::PointerPressed {
-            position,
-            button: PointerEventButton::Left,
-        });
-        main.dispatch_event(WindowEvent::PointerReleased {
-            position,
-            button: PointerEventButton::Left,
-        });
+        for x in (450..650).step_by(8) {
+            let position = LogicalPosition::new(x as f32, y as f32);
+            main.dispatch_event(WindowEvent::PointerMoved { position });
+            main.dispatch_event(WindowEvent::PointerPressed {
+                position,
+                button: PointerEventButton::Left,
+            });
+            main.dispatch_event(WindowEvent::PointerReleased {
+                position,
+                button: PointerEventButton::Left,
+            });
+            if used.get() >= 0 {
+                break;
+            }
+        }
         if used.get() >= 0 {
             compact_rows.insert(used.get());
         }

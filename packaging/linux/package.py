@@ -30,7 +30,7 @@ def main():
               ('THIRD-PARTY-NOTICES.md', ROOT / 'THIRD-PARTY-NOTICES.md', 0o644)]
     for license in (ROOT / 'packaging/licenses').glob('*'):
         if license.is_file(): files.append(('licenses/' + license.name, license, 0o644))
-    archive(out / 'sni-tunnel-v2_2.0.2_amd64.tar.gz', [('sni-tunnel/' + n, p, m) for n,p,m in files])
+    archive(out / 'sni-tunnel-v2_2.1.0_amd64.tar.gz', [('sni-tunnel/' + n, p, m) for n,p,m in files])
     installed = [('usr/lib/sni-tunnel-v2/' + n, p, m) for n,p,m in files]
     installed += [('usr/bin/sni-tunnel-v2', b'#!/bin/sh\nexec /usr/lib/sni-tunnel-v2/start.sh "$@"\n', 0o755),
                   ('usr/share/applications/sni-tunnel-v2.desktop', ROOT / 'packaging/linux/sni-tunnel.desktop', 0o644),
@@ -40,19 +40,19 @@ def main():
     versions = re.findall(r'GLIBC_([0-9]+\.[0-9]+)', '\n'.join(subprocess.check_output(['readelf', '--version-info', str(binary)], text=True) for binary in [args.binary, ROOT / 'packaging/staging/linux/core/badvpn-tun2socks']))
     glibc_required = max(versions, key=lambda value: tuple(map(int,value.split('.'))))
     control = f"""Package: sni-tunnel-v2
-Version: 2.0.2
+Version: 2.1.0
 Section: net
 Priority: optional
 Architecture: amd64
 Maintainer: SNI Tunnel local build <local@localhost>
-Depends: libc6 (>= {glibc_required}), libgcc-s1, libfontconfig1, libglib2.0-bin, libxkbcommon0, libxkbcommon-x11-0, libxcb-xkb1, libxcursor1, libxrandr2, libxi6, libx11-6, libxcb1, libwayland-client0, python3 (>= 3.8), iproute2, pkexec | policykit-1, ca-certificates, kmod
+Depends: libc6 (>= {glibc_required}), libgcc-s1, libfontconfig1, libglib2.0-bin, libxkbcommon0, libxkbcommon-x11-0, libxcb-xkb1, libxcursor1, libxrandr2, libxi6, libx11-6, libxcb1, libwayland-client0, python3 (>= 3.8), iproute2, nftables, libnotify-bin, pkexec | policykit-1, ca-certificates, kmod
 Installed-Size: {size}
 Description: VMess desktop tunnel with independent TLS SNI
  Native Slint desktop with Xray, BadVPN, Linux TUN and DNS recovery.
  Existing user profiles are retained in their original directories.
 """.encode()
     archive(stage / 'control.tar.gz', [('control', control, 0o644)])
-    with (out / 'sni-tunnel-v2_2.0.2_amd64.deb').open('wb') as ar:
+    with (out / 'sni-tunnel-v2_2.1.0_amd64.deb').open('wb') as ar:
         ar.write(b'!<arch>\n')
         for name, data in [('debian-binary', b'2.0\n'), ('control.tar.gz', (stage/'control.tar.gz').read_bytes()), ('data.tar.gz',(stage/'data.tar.gz').read_bytes())]:
             header = f'{name + "/":<16}{0:<12}{0:<6}{0:<6}{"100644":<8}{len(data):<10}`\n'.encode('ascii')
@@ -68,7 +68,7 @@ Description: VMess desktop tunnel with independent TLS SNI
             assets.append('{source=' + json.dumps(target.as_posix()) + ',dest=' + json.dumps('/' + name) + ',mode=' + json.dumps(oct(mode)[2:]) + '}')
         manifest = """[package]
 name="sni-tunnel-v2"
-version="2.0.2"
+version="2.1.0"
 edition="2021"
 description="VMess desktop tunnel with independent TLS SNI"
 license="LicenseRef-SNI-Tunnel"
@@ -87,6 +87,6 @@ glibc=">= 2.30"
         (rpmstage/'Cargo.toml').write_text(manifest)
         (rpmstage/'src').mkdir(exist_ok=True)
         (rpmstage/'src/main.rs').write_text('fn main() {}')
-        subprocess.run(['cargo-generate-rpm', '--auto-req', 'disabled', '-a', 'x86_64', '--payload-compress', 'gzip', '-o', str(out/'sni-tunnel-v2_2.0.2_amd64.rpm')], cwd=rpmstage, check=True)
+        subprocess.run(['cargo-generate-rpm', '--auto-req', 'disabled', '-a', 'x86_64', '--payload-compress', 'gzip', '-o', str(out/'sni-tunnel-v2_2.1.0_amd64.rpm')], cwd=rpmstage, check=True)
     print('Packages written to', out)
 if __name__ == '__main__': main()

@@ -1008,3 +1008,16 @@ Windows NSIS installer bundles current fixed app, official Xray26.3.27/Wintun, u
 Replaced the single-form Tk launcher with the Windows layout: header/status badge, six tabs (Dashboard, Servers, SNI, Logs, Settings, Diagnostics), four dashboard cards, Connect/Disconnect/Test/Verify/Refresh IP controls and matching palette. Retained the working Linux helper transport. Added server selection/import/duplicate/export/delete, SNI profile persistence, legacy profile migration, log copy/export/clear with redaction, diagnostics and kernel TUN byte/speed counters. Active connections remain unavailable (dash); window manager minimize replaces unsupported tray integration. Added an explicit verify command over helper stdin so full-tunnel checks do not disconnect it. Verified UI construction and all six tab switches, legacy migration, profile persistence/duplication, SNI selection, log secret redaction and simulated connection state changes on host Tk. Three DNS/route recovery tests pass. Linux live desktop and networking are not executed on this Windows host.
 
 Published v0.4.1 to https://github.com/belalhushelmy2-cmyk/SNI-Tunnel/releases/tag/v0.4.1 and marked Latest. Seven assets present. GitHub digests match local DEB/RPM/tar/source ZIP. A failed zero-byte tar upload placeholder was cleared and the remaining uploads retried before publishing. The prior v0.4.0 release retains its original packages.
+
+## 2.1 health monitoring work (in progress)
+- Audited Linux helper, engine periodic checks and full-tunnel diagnostics.
+- Confirmed gaps: no explicit proxy comparison in TUN mode; Linux recovery removes protection; Windows route-only kill switch requires further audit.
+- Release gate: no publication until implementation and required tests/builds pass.
+- Keep pinned cores and existing profile data unchanged.
+
+### Implemented checkpoint (2.1.0 candidate)
+- Independent bounded proxy/system traffic checks, fresh DNS verification, session baseline and 60-second defaults.
+- Persistent health preferences; cancellable Rust checks; Linux netlink and Windows native network events.
+- Linux nftables output guard with real isolated packet tests; Windows WFP session guard cross-compiles, native CI test pending.
+- Dashboard, notifications/history, emergency disconnect, bounded reconnect jitter.
+- No release published yet; required CI/package gates remain.

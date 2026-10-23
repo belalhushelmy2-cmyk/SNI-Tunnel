@@ -48,27 +48,81 @@ if __name__ == '__main__':
 
 class SupervisionTests(unittest.TestCase):
     def test_retries_are_bounded_and_exponential(self):
-        with patch.object(network, 'STOP') as stop, patch.object(network, 'backend', side_effect=network.RecoverableError('offline')) as backend, \
-             patch.object(network.threading, 'Thread'), patch.object(network, 'log'):
+        with patch.object(network, 'network_available', return_value=True), patch.object(network, 'remove_guard'), patch.object(network, 'STOP') as stop, patch.object(network, 'backend', side_effect=network.RecoverableError('offline')) as backend, \
+             patch.object(network.threading, 'Thread'), patch.object(network, 'log'), patch.object(network.secrets, 'randbelow', return_value=0):
             stop.is_set.return_value = False
             stop.wait.return_value = False
             with self.assertRaisesRegex(RuntimeError, '5 attempts'):
                 network.supervise(['same-profile'])
             self.assertEqual(backend.call_count, 6)
-            self.assertEqual([c.args[0] for c in stop.wait.call_args_list], [3, 6, 12, 24, 48])
+            self.assertEqual([c.args[0] for c in stop.wait.call_args_list], [1, 2, 4, 8, 15])
             self.assertTrue(all(c.args == (['same-profile'],) for c in backend.call_args_list))
 
     def test_manual_stop_interrupts_backoff(self):
-        with patch.object(network, 'STOP') as stop, patch.object(network, 'backend', side_effect=network.RecoverableError('offline')) as backend, \
-             patch.object(network.threading, 'Thread'), patch.object(network, 'log'):
+        with patch.object(network, 'network_available', return_value=True), patch.object(network, 'remove_guard'), patch.object(network, 'STOP') as stop, patch.object(network, 'backend', side_effect=network.RecoverableError('offline')) as backend, \
+             patch.object(network.threading, 'Thread'), patch.object(network, 'log'), patch.object(network.secrets, 'randbelow', return_value=0):
             stop.is_set.return_value = False
             stop.wait.return_value = True
             network.supervise([])
             self.assertEqual(backend.call_count, 1)
 
     def test_configuration_errors_are_not_retried(self):
-        with patch.object(network, 'STOP') as stop, patch.object(network, 'backend', side_effect=RuntimeError('invalid core config')) as backend, \
+        with patch.object(network, 'network_available', return_value=True), patch.object(network, 'remove_guard'), patch.object(network, 'STOP') as stop, patch.object(network, 'backend', side_effect=RuntimeError('invalid core config')) as backend, \
              patch.object(network.threading, 'Thread'):
             stop.is_set.return_value = False
             with self.assertRaisesRegex(RuntimeError, 'invalid core config'): network.supervise([])
             self.assertEqual(backend.call_count, 1)
+
+
+class HealthVerificationTests(unittest.TestCase):
+    def routes(self, args):
+        if 'link' in args:
+            return [{'flags': ['UP']}]
+        if '-6' in args:
+            return [{'dst': x, 'type': 'unreachable', 'metric': 51863}
+                    for x in ['::/1', '8000::/1']]
+        return [{'dev': 'sni0'}]
+
+    def test_healthy_route_checks(self):
+        with patch.object(network, 'read_json', side_effect=self.routes):
+            network.verify_routes()
+
+    def test_missing_adapter_fails_before_probe(self):
+        with patch.object(network, 'read_json', return_value=[]), patch.object(network, 'https_probe') as probe:
+            with self.assertRaisesRegex(RuntimeError, 'adapter'):
+                network.verify(1234)
+            probe.assert_not_called()
+
+    def test_direct_ipv4_route_is_rejected(self):
+        def changed(args):
+            return [{'dev': 'wlan0'}] if 'get' in args else self.routes(args)
+        with patch.object(network, 'read_json', side_effect=changed):
+            with self.assertRaisesRegex(RuntimeError, 'bypasses'):
+                network.verify_routes()
+
+    def test_missing_ipv6_protection_is_rejected(self):
+        def changed(args):
+            return [] if '-6' in args else self.routes(args)
+        with patch.object(network, 'read_json', side_effect=changed):
+            with self.assertRaisesRegex(RuntimeError, 'IPv6'):
+                network.verify_routes()
+
+    def test_proxy_success_does_not_hide_system_failure(self):
+        with patch.object(network, 'verify_guard', return_value=False), patch.object(network, 'verify_routes'), patch.object(network, 'read_json', return_value=[{'dev': 'sni0'}]), \
+             patch.object(network.socket, 'getaddrinfo', return_value=[(2, 1, 6, '', ('1.1.1.1', 443))]), \
+             patch.object(network, 'https_probe', side_effect=['198.51.100.1', '192.0.2.1'] * 2):
+            with self.assertRaisesRegex(RuntimeError, 'exits differ'):
+                network.verify(1234)
+
+    def test_fragmented_socks_reply_is_read_completely(self):
+        from unittest.mock import Mock
+        sock = Mock()
+        sock.recv.side_effect = [b'\x05', b'\x00']
+        self.assertEqual(network.receive_exact(sock, 2), b'\x05\x00')
+
+    def test_truncated_socks_reply_fails(self):
+        from unittest.mock import Mock
+        sock = Mock()
+        sock.recv.side_effect = [b'\x05', b'']
+        with self.assertRaisesRegex(RuntimeError, 'closed'):
+            network.receive_exact(sock, 2)

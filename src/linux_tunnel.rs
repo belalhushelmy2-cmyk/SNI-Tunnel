@@ -27,7 +27,11 @@ pub struct LinuxTunnel {
     down: u64,
 }
 impl LinuxTunnel {
-    pub async fn start(ep: &Endpoint, auto: bool, logger: &Logger) -> Result<Self> {
+    pub async fn start(
+        ep: &Endpoint,
+        settings: &crate::model::Settings,
+        logger: &Logger,
+    ) -> Result<Self> {
         let helper = std::env::current_exe()?
             .parent()
             .unwrap()
@@ -45,7 +49,13 @@ impl LinuxTunnel {
             .arg(&helper)
             .arg("--config")
             .arg(&config);
-        if !auto {
+        command
+            .arg("--health-settings")
+            .arg(serde_json::to_string(&settings.health)?);
+        if settings.kill_switch {
+            command.arg("--kill-switch");
+        }
+        if !settings.auto_reconnect {
             command.arg("--no-recovery");
         }
         let spawned = command

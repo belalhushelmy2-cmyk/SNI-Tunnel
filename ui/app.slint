@@ -190,7 +190,18 @@ export component AppWindow inherits Window {
     in-out property <bool> tun-mode: false;
     in-out property <bool> kill-switch: true;
     in-out property <bool> netmod-compatibility: false;
-    in-out property <bool> auto-reconnect: false;
+    in-out property <bool> auto-reconnect: true;
+    in-out property <string> health-retries: "0";
+    in-out property <string> health-protection: "Not verified";
+    in-out property <string> health-state: "Not verified";
+    in-out property <string> health-schedule: "No successful verification yet";
+    in-out property <string> health-checks: "TUN / DNS / IPv4 / IPv6: awaiting verification";
+    in-out property <string> notification-history: "No notifications";
+    in-out property <bool> health-enabled: true;
+    in-out property <bool> health-notifications: true;
+    in-out property <string> health-interval: "60";
+    in-out property <string> health-timeout: "10";
+    in-out property <string> health-attempts: "5";
     in-out property <bool> minimize-to-tray: true;
     in-out property <bool> start-with-windows: false;
     in-out property <bool> reduced-motion <=> Preferences.reduced-motion;
@@ -298,6 +309,20 @@ export component AppWindow inherits Window {
                         Text { text: "Public IP   " + root.external-ip; color: Theme.muted; font-size: 11px; }
                     }
                     Button { text: "Switch server"; clicked => { root.tab = 1; } }
+                }
+            }
+            Rectangle { background: Theme.panel; border-radius: 12px; min-height: 100px; vertical-stretch: 0;
+                VerticalLayout { padding: 12px; spacing: 5px;
+                    Text { text: "Connection health · " + root.health-state + " · Recovery attempts: " + root.health-retries; color: Theme.text; font-size: 13px; font-weight: 600; wrap: word-wrap; }
+                    HorizontalLayout { spacing: 6px;
+                        Button { text: "Verify now"; clicked => { root.verify_full_tunnel_clicked(); } }
+                        Button { text: "Reconnect now"; clicked => { root.reconnect_now_clicked(); } }
+                        Button { text: "Disconnect / release protection"; clicked => { root.disconnect_clicked(); } }
+                    }
+                    Text { text: "Exit: " + root.external-ip + " · " + root.latency; color: Theme.muted; font-size: 10px; wrap: word-wrap; }
+                    Text { text: "Kill switch: " + root.health-protection; color: Theme.muted; font-size: 10px; wrap: word-wrap; }
+                    Text { text: root.health-schedule; color: Theme.muted; font-size: 10px; }
+                    Text { text: root.health-checks; color: Theme.muted; font-size: 10px; wrap: word-wrap; }
                 }
             }
             HorizontalLayout { spacing: 12px;
@@ -474,6 +499,7 @@ export component AppWindow inherits Window {
                 Button { text: "Export"; clicked => { root.export_logs_clicked(); } }
                 Button { text: "Clear"; clicked => { root.clear_logs_clicked(); } }
             }
+            Text { text: root.notification-history; color: Theme.muted; font-size: 10px; wrap: word-wrap; max-height: 90px; overflow: elide; }
             Text { text: "Times: UTC. Advanced core logging requires reconnecting. " + root.log-status; color: Theme.muted; font-size: 11px; }
             LineEdit { text <=> root.log-search; placeholder-text: "Search log messages"; }
             log-view := ScrollView {
@@ -542,8 +568,19 @@ export component AppWindow inherits Window {
             CheckBox { text: "Manage desktop system proxy while connected"; checked <=> root.system-proxy; }
             CheckBox { text: "TUN mode · route the whole device (requires permission)"; checked <=> root.tun-mode; }
             CheckBox { text: "NetMod TAP compatibility test (disconnect NetMod first)"; checked <=> root.netmod-compatibility; enabled: root.platform-windows; }
-            CheckBox { text: root.platform-windows ? "Kill switch: block traffic when the tunnel is down" : "Kill switch · Windows TUN only"; checked <=> root.kill-switch; enabled: root.platform-windows; }
+            CheckBox { text: "Kill switch: block traffic when the tunnel is down"; checked <=> root.kill-switch; }
+            Text { text: "CONNECTION HEALTH"; color: Theme.accent; font-size: 11px; font-weight: 700; }
+            CheckBox { text: "Automatic monitoring"; checked <=> root.health-enabled; }
             CheckBox { text: "Auto-reconnect if the core dies or traffic fails"; checked <=> root.auto-reconnect; }
+            CheckBox { text: "Desktop notifications"; checked <=> root.health-notifications; }
+            HorizontalLayout {
+                Text { text: "Interval (15–3600 s)"; color: Theme.text; vertical-alignment: center; }
+                LineEdit { text <=> root.health-interval; width: 70px; }
+                Text { text: "Timeout (3–30 s)"; color: Theme.text; vertical-alignment: center; }
+                LineEdit { text <=> root.health-timeout; width: 70px; }
+                Text { text: "Attempts (1–10)"; color: Theme.text; vertical-alignment: center; }
+                LineEdit { text <=> root.health-attempts; width: 55px; }
+            }
             CheckBox { text: "Minimize to tray when the window is closed"; checked <=> root.minimize-to-tray; enabled: root.tray-available; }
             if !root.tray-available: Text { text: "No desktop tray host is available. Minimize uses the taskbar."; color: Theme.muted; font-size: 11px; wrap: word-wrap; }
             CheckBox { text: "Start with your desktop session"; checked <=> root.start-with-windows; }

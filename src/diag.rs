@@ -715,7 +715,7 @@ impl TunnelVerdict {
 /// same address through another VPN.
 pub async fn verify_full_tunnel(
     proxy_port: Option<u16>,
-    server_addrs: &[String],
+    _server_addrs: &[String],
     baseline: Option<String>,
     active_conns: Option<u64>,
     timeout: Duration,
@@ -724,6 +724,12 @@ pub async fn verify_full_tunnel(
         baseline: baseline.clone(),
         ..Default::default()
     };
+
+    if let Err(error) = crate::kill_switch::verify() {
+        v.problems
+            .push(format!("Kill switch verification failed: {error:#}"));
+        return v;
+    }
 
     // 1. The system routing table has to point into the TUN, otherwise no
     //    ordinary traffic can reach the tunnel at all.
@@ -734,80 +740,77 @@ pub async fn verify_full_tunnel(
                 "the system's IPv4 routes do not point into the TUN ({v4} of 2 split routes found)"
             ));
         }
-        // IPv6 is deliberately blocked by this tunnel. Some Windows installs
-        // have IPv6 disabled or no IPv6 uplink, so the IPv6 split routes may
-        // be absent without affecting the working IPv4 tunnel. Treat that as
-        // a real failure only when IPv6 connectivity is available and could
-        // otherwise bypass the tunnel.
         if v6 < 2 {
-            match crate::netcheck::public_ip_v6(Duration::from_secs(8)).await {
-                Ok(_) => v.problems.push(format!(
-                    "IPv6 is reachable but only {v6} of 2 IPv6 block routes point into the TUN"
-                )),
-                Err(_) => v.notes.push(format!(
-                    "IPv6 is unavailable on this network; {v6} IPv6 block routes were detected"
-                )),
-            }
+            v.problems.push(format!(
+                "IPv6 protection is incomplete ({v6} of 2 routes); no direct IPv6 probe was sent"
+            ));
         }
     } else {
         v.problems
             .push("routing table unavailable; cannot verify full tunnel".into());
     }
 
-    // The host that is used for the measurement has to be routed through the
-    // TUN as well - otherwise the measurement would not prove anything.
-    match crate::netcheck::system_dns_lookup(MEASUREMENT_HOST).await {
-        Ok(addrs) => {
-            let ipv4: Vec<String> = addrs
-                .iter()
-                .filter(|a| a.parse::<std::net::Ipv4Addr>().is_ok())
-                .cloned()
-                .collect();
-            v.measurement_addrs = addrs.clone();
-            let mut into_tun = None;
-            for a in &ipv4 {
-                if let Some(v) = crate::tun::route_leads_into_tun(a).await {
-                    into_tun = Some(v);
-                    if v {
-                        break;
-                    }
-                }
-            }
-            // Route attribution is an extra proof, not the route setup
-            // itself.  Windows can return no usable IPv4 address here (DNS
-            // can be transiently unavailable, or the resolver may return
-            // only IPv6).  Do not reject an otherwise working /1 tunnel on
-            // that auxiliary measurement.
-            if into_tun == Some(false) {
-                v.problems.push(format!(
-                    "the host {MEASUREMENT_HOST} ({}) is not routed through the TUN - \
-                     the measurement would not prove anything",
-                    ipv4.join(", ")
-                ));
-            } else if into_tun.is_none() {
-                v.notes.push(format!(
-                    "the route to {MEASUREMENT_HOST} could not be attributed to the TUN"
-                ));
-            }
-        }
-        Err(e) => v.notes.push(format!(
-            "the address of {MEASUREMENT_HOST} could not be resolved ({e:#})"
-        )),
+    if !v.problems.is_empty() {
+        return v;
     }
 
     let tun_before = crate::tun::adapter_traffic(&crate::tun::active_device());
     let uplink_before = crate::tun::uplink_traffic().await;
 
-    // 1. the exit of an ordinary request (no proxy anywhere).
-    match crate::netcheck::public_ip(timeout).await {
-        Ok(ip) => v.ordinary_exit = Some(ip),
-        Err(e) => {
-            v.problems.push(format!(
-                "the ordinary system request failed ({e:#}) - the system-wide \
-                 traffic could not be verified"
-            ));
-            return v;
+    if crate::tun::route_leads_into_tun("1.1.1.1").await != Some(true) {
+        v.problems
+            .push("DNS/probe destination is not routed through the TUN".into());
+        return v;
+    }
+    if let Err(error) =
+        crate::netcheck::verify_dns_datagram("1.1.1.1:53".parse().unwrap(), timeout).await
+    {
+        v.problems
+            .push(format!("Fresh DNS forwarding check failed: {error:#}"));
+        return v;
+    }
+    let Some(port) = proxy_port else {
+        v.problems
+            .push("Independent proxy verification is unavailable for this backend".into());
+        return v;
+    };
+    for url in ["https://1.1.1.1/cdn-cgi/trace", "https://api.ipify.org"] {
+        let attempt = async {
+            let addresses = if url.contains("api.ipify.org") {
+                crate::netcheck::system_dns_lookup(MEASUREMENT_HOST).await?
+            } else {
+                vec!["1.1.1.1".into()]
+            };
+            let addresses: Vec<_> = addresses
+                .into_iter()
+                .filter(|a| a.parse::<std::net::Ipv4Addr>().is_ok())
+                .collect();
+            anyhow::ensure!(!addresses.is_empty(), "Probe has no IPv4 address");
+            for address in &addresses {
+                anyhow::ensure!(
+                    crate::tun::route_leads_into_tun(address).await == Some(true),
+                    "Probe route does not use TUN"
+                );
+            }
+            let proxied = crate::netcheck::health_exit(Some(port), url, timeout).await?;
+            let ordinary = crate::netcheck::health_exit(None, url, timeout).await?;
+            anyhow::ensure!(
+                proxied == ordinary,
+                "System and explicit proxy exit addresses differ"
+            );
+            Ok::<_, anyhow::Error>((proxied, ordinary))
+        };
+        // Leave time for the independent service if one provider is unavailable.
+        if let Ok(Ok((proxied, ordinary))) = tokio::time::timeout(timeout / 3, attempt).await {
+            v.proxied_exit = Some(proxied);
+            v.ordinary_exit = Some(ordinary);
+            break;
         }
+    }
+    if v.ordinary_exit.is_none() {
+        v.problems
+            .push("Independent system/proxy traffic verification failed for both services".into());
+        return v;
     }
 
     let tun_after = crate::tun::adapter_traffic(&crate::tun::active_device());
@@ -822,19 +825,6 @@ pub async fn verify_full_tunnel(
         _ => None,
     };
     v.connections = active_conns.unwrap_or(0) as u32;
-
-    // 3. The exit of a request that goes through the local proxy. The local
-    //    proxy only runs in the system proxy mode - in TUN mode there is no
-    //    second path to compare with.
-    match proxy_port {
-        Some(port) => {
-            v.proxied_exit = crate::netcheck::public_ip_via_proxy(port, timeout).await.ok();
-        }
-        None => v.notes.push(
-            "the local proxy does not run in TUN mode - the two exit addresses could not be compared"
-                .to_string(),
-        ),
-    }
 
     let exit = v.ordinary_exit.clone().unwrap_or_default();
 
@@ -855,7 +845,7 @@ pub async fn verify_full_tunnel(
     }
 
     // The tunnel has to have carried the bytes.
-    if !v.tunnel_bytes.map(|(r, t)| r > 0 || t > 0).unwrap_or(false) {
+    if !v.tunnel_bytes.map(|(r, t)| r > 0 && t > 0).unwrap_or(false) {
         v.problems
             .push("the TUN adapter's counters did not move".to_string());
     }
@@ -880,25 +870,6 @@ pub async fn verify_full_tunnel(
             v.notes.push(format!(
                 "the request through the local proxy leaves the machine via {p} \
                  (it was {b} before the tunnel was started)"
-            ));
-        }
-    }
-
-    // The exit address of a tunnel is the address of the server it runs on -
-    // that is what proves that the traffic left the machine through the
-    // server. If it does not match, the server is probably behind a NAT or a
-    // CDN, which is not an error.
-    if !server_addrs.is_empty() {
-        if server_addrs.iter().any(|a| a == &exit) {
-            v.notes.push(format!(
-                "the exit address {exit} is the address of the server - the traffic \
-                 left the machine through the tunnel"
-            ));
-        } else {
-            v.notes.push(format!(
-                "the exit address {exit} is not the address of the server ({}), the \
-                 server is probably behind a NAT or a CDN",
-                server_addrs.join(", ")
             ));
         }
     }

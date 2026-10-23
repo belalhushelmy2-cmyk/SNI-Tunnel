@@ -1,3 +1,13 @@
+# 2.1.0 — connection health and recovery
+
+- 60-second full-tunnel checks compare explicit proxy and ordinary IPv4 exits, fresh DNS replies, routes and TUN traffic. Probe responses and deadlines are bounded; IPv6 protection is checked without an external IPv6 request.
+- Checks use independent providers, preserve a verified session exit baseline, and never use the VMess dial address as exit evidence.
+- Linux netlink and Windows interface/route notifications trigger coalesced checks. Core exits remain immediate failure signals; disconnect cancels scheduled recovery.
+- Bounded reconnect delays start at 1, 2, 4, 8 and 15 seconds with jitter. Linux pauses retries while the physical network is unavailable.
+- Linux nftables and Windows dynamic WFP guards survive core restart and enforce output policy independently of TUN routes. Disconnect releases application-owned protection.
+- Connection Health settings/panel, Verify Now, Reconnect Now, emergency disconnect, native desktop notifications and in-app notification history.
+- Existing server credentials, SNI, transport, MUX and explicit preferences are preserved; pinned cores are unchanged.
+
 # SNI Tunnel V2 — 2.0.0
 
 - Native Slint interface on Windows and Linux, with an original dark visual identity,

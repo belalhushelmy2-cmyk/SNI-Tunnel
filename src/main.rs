@@ -477,6 +477,7 @@ async fn proxy_cmd(o: &Opts, logger: &Logger) -> Result<i32> {
                         println!("            external IP: {ip}");
                     }
                 }
+                EngineEvent::Protection(text) => println!("[PROTECTION] {text}"),
                 EngineEvent::Stats(t) => {
                     ticks += 1;
                     if ticks.is_multiple_of(5) {

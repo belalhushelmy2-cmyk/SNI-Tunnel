@@ -735,3 +735,94 @@ mod certificate_retry_tests {
         assert_eq!(result.err().unwrap().to_string(), "failure 3");
     }
 }
+
+/// Fresh UDP DNS exchange, independent of the OS resolver cache.
+pub async fn verify_dns_datagram(resolver: std::net::SocketAddr, timeout: Duration) -> Result<()> {
+    tokio::time::timeout(timeout, async {
+        let socket = tokio::net::UdpSocket::bind("0.0.0.0:0").await?;
+        socket.connect(resolver).await?;
+        let id = uuid::Uuid::new_v4();
+        let mut query = vec![id.as_bytes()[0], id.as_bytes()[1]];
+        query.extend_from_slice(
+            b"\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x07example\x03com\x00\x00\x01\x00\x01",
+        );
+        socket.send(&query).await?;
+        let mut answer = [0u8; 4096];
+        let count = socket.recv(&mut answer).await?;
+        anyhow::ensure!(
+            count >= 12
+                && answer[..2] == query[..2]
+                && answer[2] & 0x80 != 0
+                && answer[3] & 0x0f == 0
+                && answer[6..8] != [0, 0],
+            "DNS response failed validation"
+        );
+        Ok(())
+    })
+    .await
+    .context("DNS health check timed out")?
+}
+
+/// Bounded, IPv4-only probe using either a loopback HTTP proxy or an ordinary
+/// system socket. Both explicitly disable inherited proxy configuration.
+pub async fn health_exit(proxy_port: Option<u16>, url: &str, timeout: Duration) -> Result<String> {
+    let mut builder = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(timeout)
+        .redirect(reqwest::redirect::Policy::none())
+        .local_address("0.0.0.0".parse::<std::net::IpAddr>()?);
+    if let Some(port) = proxy_port {
+        builder = builder.proxy(reqwest::Proxy::all(format!("http://127.0.0.1:{port}"))?);
+    }
+    let mut response = builder.build()?.get(url).send().await?.error_for_status()?;
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await? {
+        anyhow::ensure!(
+            body.len() + chunk.len() <= 16384,
+            "Oversized health response"
+        );
+        body.extend_from_slice(&chunk);
+    }
+    let text = std::str::from_utf8(&body)?;
+    let ip = crate::tun::parse_trace_ip(text).unwrap_or_else(|| text.trim().to_owned());
+    ip.parse::<std::net::Ipv4Addr>()
+        .context("Probe omitted valid IPv4 exit")?;
+    Ok(ip)
+}
+
+#[cfg(test)]
+mod health_dns_tests {
+    use super::*;
+    async fn reply(valid: bool) -> Result<()> {
+        let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await?;
+        let address = socket.local_addr()?;
+        let responder = tokio::spawn(async move {
+            let mut bytes = [0u8; 512];
+            let (n, peer) = socket.recv_from(&mut bytes).await.unwrap();
+            bytes[2] = 0x81;
+            bytes[3] = if valid { 0x80 } else { 0x83 };
+            bytes[7] = 1;
+            socket.send_to(&bytes[..n], peer).await.unwrap();
+        });
+        let result = verify_dns_datagram(address, Duration::from_secs(1)).await;
+        responder.await?;
+        result
+    }
+    #[tokio::test]
+    async fn dns_success_requires_a_valid_answer() {
+        assert!(reply(true).await.is_ok());
+    }
+    #[tokio::test]
+    async fn dns_error_response_is_not_healthy() {
+        assert!(reply(false).await.is_err());
+    }
+    #[tokio::test]
+    async fn dns_silence_is_bounded() {
+        let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        assert!(
+            verify_dns_datagram(socket.local_addr().unwrap(), Duration::from_millis(30))
+                .await
+                .is_err()
+        );
+    }
+}

@@ -773,6 +773,8 @@ pub struct TunSession {
     routes: Vec<RouteSpec>,
     /// The name of the wintun adapter that was actually created.
     pub device: String,
+    /// Loopback-only HTTP inbound for independent VMess health probes.
+    pub health_port: Option<u16>,
     /// The DNS configuration that was replaced when the tunnel went up.
     dns_backups: Vec<DnsBackup>,
     /// The addresses of the server the tunnel connects to. The traffic that
@@ -960,6 +962,7 @@ impl TunSession {
         let mut last_error: Option<TunSetupError> = None;
         let mut started = None;
         let conns = Arc::new(crate::stats::ConnCounter::new());
+        let health_port = util::free_port();
         for attempt in 0..4u32 {
             let device = if attempt == 0 {
                 DEVICE_NAME.to_string()
@@ -967,6 +970,10 @@ impl TunSession {
                 format!("{DEVICE_NAME}-{attempt}")
             };
             let mut cfg = tun_config(&device, TUN_MTU, outbound.clone(), &loglevel);
+            cfg["inbounds"].as_array_mut().unwrap().push(json!({
+                "tag": "health-http", "listen": "127.0.0.1",
+                "port": health_port, "protocol": "http", "settings": {}
+            }));
             if let Some(dns) = &dns_config {
                 cfg["dns"] = dns.clone();
             }
@@ -1091,6 +1098,7 @@ impl TunSession {
         Ok(TunSession {
             compatibility,
             core: Some(core),
+            health_port: Some(health_port),
             tap: None,
             routes,
             device,
@@ -1156,6 +1164,7 @@ impl TunSession {
         Ok(Self {
             compatibility: Some(backend),
             core: None,
+            health_port: None,
             device: tap.device.clone(),
             tap: Some(tap),
             routes,
