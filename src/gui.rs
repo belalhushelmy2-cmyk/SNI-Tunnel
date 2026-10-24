@@ -78,6 +78,7 @@ pub fn run(cfg: Arc<Mutex<AppConfig>>, logger: Logger) -> Result<i32> {
 
     // ---- UI ----
     let ui = AppWindow::new()?;
+    ui.set_app_version(format!("v{}", env!("CARGO_PKG_VERSION")).into());
     ui.set_platform_windows(cfg!(windows));
     ui.on_matches(|text, query| text.to_lowercase().contains(&query.to_lowercase()));
     let editor_slot: Rc<RefCell<Option<ServerEditor>>> = Rc::new(RefCell::new(None));
@@ -348,6 +349,21 @@ pub fn run(cfg: Arc<Mutex<AppConfig>>, logger: Logger) -> Result<i32> {
                             "TUN / DNS / IPv4 / IPv6: awaiting verification".into(),
                         );
                     }
+                    let indicators =
+                        health_indicators(s.phase, cfg.lock().unwrap().settings.mode == "tun");
+                    ui.set_health_tun(indicators.0.into());
+                    ui.set_health_dns(indicators.1.into());
+                    ui.set_health_ipv4(indicators.2.into());
+                    ui.set_health_ipv6(indicators.3.into());
+                    ui.set_health_check_state(indicators.4);
+                    if matches!(
+                        s.phase,
+                        Phase::Disconnected | Phase::Preparing | Phase::Error
+                    ) {
+                        ui.set_external_ip("-".into());
+                        traffic_history.borrow_mut().clear();
+                        publish_traffic_chart(&ui, &traffic_history.borrow());
+                    }
                     let still_connected = connection_is_live(s.phase, state.is_connected());
                     ui.set_connection_live(still_connected);
                     ui.set_connection_busy(!matches!(s.phase, Phase::Disconnected | Phase::Error));
@@ -380,31 +396,16 @@ pub fn run(cfg: Arc<Mutex<AppConfig>>, logger: Logger) -> Result<i32> {
                         refresh_servers(&ui, cfg, state);
                     }
                 }
-                Ok(EngineEvent::Protection(text)) => ui.set_health_protection(text.into()),
+                Ok(EngineEvent::Protection(text)) => {
+                    let (label, level) = protection_indicator(&text);
+                    ui.set_protection_short(label.into());
+                    ui.set_protection_state(level);
+                    ui.set_health_protection(text.into());
+                }
                 Ok(EngineEvent::Stats(t)) => {
                     let mut history = traffic_history.borrow_mut();
-                    if t.uptime_secs > 0 || t.up > 0 || t.down > 0 {
-                        history.push_back((t.up_speed, t.down_speed));
-                        if history.len() > 60 {
-                            history.pop_front();
-                        }
-                    }
-                    let peak = history
-                        .iter()
-                        .map(|(up, down)| (*up).max(*down))
-                        .max()
-                        .unwrap_or(1)
-                        .max(1);
-                    ui.set_traffic_peak(peak as f32);
-                    ui.set_traffic(ModelRc::new(VecModel::from(
-                        history
-                            .iter()
-                            .map(|(up, down)| TrafficPoint {
-                                up: *up as f32,
-                                down: *down as f32,
-                            })
-                            .collect::<Vec<_>>(),
-                    )));
+                    record_traffic(&mut history, &t, state.is_connected());
+                    publish_traffic_chart(&ui, &history);
                     ui.set_up_speed(util::format_rate(t.up_speed).into());
                     ui.set_down_speed(util::format_rate(t.down_speed).into());
                     ui.set_up_total(util::format_bytes(t.up).into());
@@ -1241,6 +1242,119 @@ mod server_list_tests {
     }
 }
 
+// Presentation helpers consume engine evidence; they never probe or alter networking.
+fn health_indicators(
+    phase: Phase,
+    tun: bool,
+) -> (&'static str, &'static str, &'static str, &'static str, i32) {
+    let adapter = if tun { "Not verified" } else { "Not enabled" };
+    match phase {
+        Phase::FullForwarding => (
+            if tun { "Verified" } else { "Not enabled" },
+            "Verified",
+            "Verified",
+            "Protected",
+            1,
+        ),
+        Phase::DnsReady => (
+            if tun { "Ready" } else { "Not enabled" },
+            "Verified",
+            "Not verified",
+            "Not verified",
+            0,
+        ),
+        Phase::TunReady | Phase::RoutesActive => {
+            ("Ready", "Not verified", "Not verified", "Not verified", 0)
+        }
+        Phase::Forwarding => (adapter, "Not checked", "Proxy only", "Not checked", 0),
+        Phase::Verifying => (adapter, "Checking", "Checking", "Checking", 0),
+        Phase::Degraded | Phase::Reconnecting => (
+            adapter,
+            "Check pending",
+            "Check pending",
+            "Check pending",
+            2,
+        ),
+        _ => (adapter, "Not verified", "Not verified", "Not verified", 0),
+    }
+}
+fn protection_indicator(evidence: &str) -> (&'static str, i32) {
+    let lower = evidence.to_ascii_lowercase();
+    if lower.starts_with("active") {
+        ("Active", 1)
+    } else if lower == "disabled" || lower.starts_with("released") {
+        ("Off", 0)
+    } else {
+        ("Not verified", 2)
+    }
+}
+fn record_traffic(
+    history: &mut std::collections::VecDeque<(u64, u64)>,
+    sample: &engine::StatsEvent,
+    live: bool,
+) {
+    if !live {
+        history.clear();
+        return;
+    }
+    if sample.uptime_secs > 0 || sample.up > 0 || sample.down > 0 {
+        history.push_back((sample.up_speed, sample.down_speed));
+        if history.len() > 60 {
+            history.pop_front();
+        }
+    }
+}
+fn chart_segments(
+    history: &std::collections::VecDeque<(u64, u64)>,
+    peak: u64,
+    upload: bool,
+) -> Vec<PlotSegment> {
+    let count = history.len();
+    if count < 2 {
+        return Vec::new();
+    }
+    let point = |index: usize| {
+        let sample = history[index];
+        let value = if upload { sample.0 } else { sample.1 };
+        (
+            600.0 * index as f32 / (count - 1) as f32,
+            119.0 - 117.0 * (value as f32 / peak.max(1) as f32).clamp(0.0, 1.0),
+        )
+    };
+    (1..count)
+        .map(|index| {
+            let (x1, y1) = point(index - 1);
+            let (x2, y2) = point(index);
+            PlotSegment { x1, y1, x2, y2 }
+        })
+        .collect()
+}
+fn publish_traffic_chart(ui: &AppWindow, history: &std::collections::VecDeque<(u64, u64)>) {
+    let peak = history
+        .iter()
+        .map(|(up, down)| (*up).max(*down))
+        .max()
+        .unwrap_or(0);
+    ui.set_traffic_peak(peak.max(1) as f32);
+    ui.set_chart_top(util::format_rate(peak).into());
+    ui.set_chart_middle(util::format_rate(peak / 2).into());
+    ui.set_traffic_down_line(ModelRc::new(VecModel::from(chart_segments(
+        history, peak, false,
+    ))));
+    ui.set_traffic_up_line(ModelRc::new(VecModel::from(chart_segments(
+        history, peak, true,
+    ))));
+    ui.set_traffic(ModelRc::new(VecModel::from(
+        history
+            .iter()
+            .map(|(up, down)| TrafficPoint {
+                up: *up as f32,
+                down: *down as f32,
+            })
+            .collect::<Vec<_>>(),
+    )));
+}
+
 fn refresh_servers(ui: &AppWindow, cfg: &Arc<Mutex<AppConfig>>, state: &Arc<UiState>) {
     let c = cfg.lock().unwrap();
     ui.set_server_count(c.servers.len() as i32);
@@ -1294,6 +1408,24 @@ fn refresh_servers(ui: &AppWindow, cfg: &Arc<Mutex<AppConfig>>, state: &Arc<UiSt
         .iter()
         .find(|s| s.id == active)
         .or_else(|| c.selected_server_profile());
+    ui.set_selected_server_name(
+        dashboard
+            .map(display_name)
+            .unwrap_or_else(|| "No active server".into())
+            .into(),
+    );
+    ui.set_selected_server_detail(
+        dashboard
+            .map(|server| {
+                let endpoint = resolve_endpoint(server, c.selected_sni());
+                format!(
+                    "{}:{} · SNI: {}",
+                    endpoint.address, endpoint.port, endpoint.sni
+                )
+            })
+            .unwrap_or_else(|| "Choose a server from your list".into())
+            .into(),
+    );
     ui.set_active_profile(
         dashboard
             .map(|s| format!("{}  ·  SNI: {}", display_name(s), s.sni))
@@ -1784,5 +1916,65 @@ mod connection_liveness_tests {
         ] {
             assert!(!connection_is_live(phase, true));
         }
+    }
+}
+
+#[cfg(test)]
+mod dashboard_presentation_tests {
+    use super::*;
+    #[test]
+    fn no_traffic_is_invented_or_retained_after_disconnect() {
+        let mut history = std::collections::VecDeque::new();
+        record_traffic(&mut history, &engine::StatsEvent::default(), true);
+        assert!(history.is_empty());
+        for speed in 0..70 {
+            record_traffic(
+                &mut history,
+                &engine::StatsEvent {
+                    up: 1,
+                    down: 1,
+                    up_speed: speed,
+                    down_speed: 2 * speed,
+                    ..Default::default()
+                },
+                true,
+            );
+        }
+        assert_eq!(history.len(), 60);
+        assert_eq!(history.front(), Some(&(10, 20)));
+        let line = chart_segments(&history, 138, false);
+        assert_eq!(line.len(), 59);
+        assert_eq!(line.first().unwrap().x1, 0.0);
+        assert_eq!(line.last().unwrap().x2, 600.0);
+        assert!((line.last().unwrap().y2 - 2.0).abs() < 0.01);
+        record_traffic(
+            &mut history,
+            &engine::StatsEvent {
+                up: 9,
+                down: 9,
+                ..Default::default()
+            },
+            false,
+        );
+        assert!(history.is_empty());
+        assert!(chart_segments(&history, 0, false).is_empty());
+    }
+    #[test]
+    fn proxy_success_never_presents_full_tunnel_or_ipv6_success() {
+        assert_eq!(
+            health_indicators(Phase::Forwarding, false),
+            ("Not enabled", "Not checked", "Proxy only", "Not checked", 0)
+        );
+        assert_eq!(health_indicators(Phase::Degraded, true).4, 2);
+        assert_eq!(
+            health_indicators(Phase::FullForwarding, true),
+            ("Verified", "Verified", "Verified", "Protected", 1)
+        );
+        assert_eq!(protection_indicator("Inactive"), ("Not verified", 2));
+        assert_eq!(
+            protection_indicator("Cleanup unverified"),
+            ("Not verified", 2)
+        );
+        assert_eq!(protection_indicator("Active · nftables"), ("Active", 1));
     }
 }

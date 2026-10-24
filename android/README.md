@@ -1,4 +1,4 @@
-# SNI Tunnel for Android and Android TV 1.0.3
+# SNI Tunnel for Android and Android TV 1.0.4
 
 Two native Android apps share a VpnService, encrypted profile store and pinned
 network runtimes. Both flavors use Overview, Servers, SNI profiles, Activity, Settings and
@@ -104,3 +104,14 @@ See the repository TEST_RESULTS.md for executed build/test/device checks.
 Physical phone and Android TV checks, real-server forwarding, Wi-Fi handoff,
 OEM battery management and long sessions must be reported separately from
 successful compilation, signing or emulator startup.
+
+## DNS and transfer rates — 1.0.4
+
+UDP port 53 requests from Android's resolver are translated to DNS-over-TCP
+through the same VMess outbound and the requested resolver. No device-side
+public DNS bypass is added, and other UDP traffic is unchanged. Startup and
+health checks require both HTTPS forwarding and a matching DNS answer.
+The verification badge describes those probes; it does not certify every app.
+Download/upload rates are bytes per second measured at the packet forwarder;
+received/sent totals remain separate and accumulate across recovery.
+See [the separate-app regression fixture](test-support/README.md).

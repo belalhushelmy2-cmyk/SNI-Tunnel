@@ -75,7 +75,7 @@ public final class MainActivity extends Activity {
         button(content,"Switch server",v->navigate(1));
         button(content,"Choose SNI profile",v->navigate(2));
         feedback=label(content,"",14,MUTED);
-        label(content,"TUN · whole device, except this app/core UID\nAndroid's VPN permission is required. Proxy health is checked independently; it is not proof of every application's route.",12,MUTED);
+        label(content,"TUN · whole device, except this app/core UID\nAndroid's VPN permission is required. Proxy HTTPS and tunneled DNS are checked independently. Transfer rates below measure packets handled by the VPN, not the proxy probe.",12,MUTED);
     }
     private void servers(){
         LinearLayout add=row(content);button(add,"+ Add server",v->edit(null));button(add,"Clipboard",v->clipboard());
@@ -154,6 +154,7 @@ public final class MainActivity extends Activity {
         EditText interval=field(content,"Health interval (15–3600 seconds)",String.valueOf(settings.interval()));interval.setInputType(2);
         EditText timeout=field(content,"Probe timeout (3–30 seconds)",String.valueOf(settings.timeout()));timeout.setInputType(2);
         button(content,"Save settings",v->{try{int seconds=Integer.parseInt(interval.getText().toString()),limit=Integer.parseInt(timeout.getText().toString());if(seconds<15||seconds>3600||limit<3||limit>30)throw new Exception();settings.prefs.edit().putBoolean("health",health.isChecked()).putBoolean("reconnect",recovery.isChecked()).putInt("interval",seconds).putInt("timeout",limit).apply();message("Settings saved.");}catch(Exception e){message("Enter interval 15–3600 and timeout 3–30.");}});
+        label(content,"Version " + BuildConfig.VERSION_NAME,12,MUTED);
         label(content,"TUN routes the whole device except this app/core UID. Android's VPN dialog controls permission. A failed startup leaves ordinary connectivity available; bounded recovery retains an established VPN. Android always-on/lockdown is not provided.",13,MUTED);
         feedback=label(content,"",14,ACCENT);
     }
@@ -161,12 +162,12 @@ public final class MainActivity extends Activity {
         state=label(content,TunnelService.status,18,ACCENT);traffic=label(content,"",14,MUTED);
         button(content,"Test selected server TCP",v->{try{test(settings.apply(store.current()));}catch(Exception e){message("Select a server first.");}});
         button(content,"Verify active tunnel",v->verify());button(content,"Reconnect now",v->prepare(true));button(content,"Open Activity",v->navigate(3));
-        label(content,"If TLS fails with a custom SNI, check the certificate verification name or a trusted leaf certificate pin in Servers → Edit. A green status requires an actual HTTPS response through the proxy.",13,MUTED);
+        label(content,"If TLS fails with a custom SNI, check the certificate verification name or a trusted leaf certificate pin in Servers → Edit. Proxy verification requires HTTPS plus a tunneled DNS answer. It does not certify every app route. Activity separates TLS, DNS and packet-forwarder failures.",13,MUTED);
         feedback=label(content,"",14,MUTED);
     }
     private void refreshStatus(){
         if(state!=null){state.setText(TunnelService.status);state.setTextColor(TunnelService.verified?ACCENT:TunnelService.active?0xfff3c675:MUTED);}
-        if(traffic!=null){long elapsed=TunnelService.connectedAt==0?0:(System.currentTimeMillis()-TunnelService.connectedAt)/1000;traffic.setText("HTTPS latency: "+(TunnelService.latency<0?"not measured":TunnelService.latency+" ms")+"\nUpload: "+bytes(TunnelService.uploaded)+"  ·  Download: "+bytes(TunnelService.downloaded)+"\nSession: "+String.format(Locale.US,"%02d:%02d",elapsed/60,elapsed%60));}
+        if(traffic!=null){long elapsed=TunnelService.connectedAt==0?0:(System.currentTimeMillis()-TunnelService.connectedAt)/1000;traffic.setText("HTTPS latency: "+(TunnelService.latency<0?"not measured":TunnelService.latency+" ms")+"\nDownload: "+bytes(TunnelService.downloadRate)+"/s  ·  Upload: "+bytes(TunnelService.uploadRate)+"/s\nReceived: "+bytes(TunnelService.downloaded)+"  ·  Sent: "+bytes(TunnelService.uploaded)+"\nSession: "+String.format(Locale.US,"%02d:%02d",elapsed/60,elapsed%60));}
         if(activityLog!=null){String value=Events.text();if(!activityLog.getText().toString().equals(value))activityLog.setText(value);}
     }
     private void prepare(boolean reconnect){if(TunnelService.active){if(reconnect)startService(new Intent(this,TunnelService.class).setAction("RECONNECT"));else message("Connection already active. Use Reconnect or Disconnect.");return;}try{settings.apply(store.current());}catch(Exception e){message("Import and select a server first.");return;}Intent permission=VpnService.prepare(this);if(permission!=null)startActivityForResult(permission,11);else connect();}

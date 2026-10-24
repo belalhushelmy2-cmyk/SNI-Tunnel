@@ -73,10 +73,19 @@ public final class Profile {
         }
         if (net.equals("ws")) stream.put("wsSettings",new JSONObject().put("path",v.optString("path","/")).put("host",v.optString("host")));
         if (net.equals("grpc")) stream.put("grpcSettings",new JSONObject().put("serviceName",v.optString("path")));
-        JSONObject outbound = new JSONObject().put("protocol","vmess").put("settings",new JSONObject().put("vnext",new JSONArray().put(node))).put("streamSettings",stream);
+        JSONObject outbound = new JSONObject().put("tag","proxy").put("protocol","vmess").put("settings",new JSONObject().put("vnext",new JSONArray().put(node))).put("streamSettings",stream);
         if(v.optBoolean("mux",false))outbound.put("mux",new JSONObject().put("enabled",true).put("concurrency",8));
         JSONObject inbound = new JSONObject().put("listen","127.0.0.1").put("port",port).put("protocol","socks").put("settings",new JSONObject().put("auth","noauth").put("udp",true));
-        return new JSONObject().put("log",new JSONObject().put("loglevel","warning")).put("inbounds",new JSONArray().put(inbound)).put("outbounds",new JSONArray().put(outbound));
+        // Android's resolver sends UDP DNS even when VMess/TCP forwarding works.
+        // Translate only DNS to TCP, then chain it through the same VMess outbound.
+        // No freedom/direct fallback or device-side public DNS connection is added.
+        JSONObject dns = new JSONObject().put("tag","dns-tcp").put("protocol","dns")
+            .put("settings",new JSONObject().put("rewriteNetwork","tcp").put("rules",new JSONArray().put(new JSONObject().put("action","direct"))))
+            .put("streamSettings",new JSONObject().put("sockopt",new JSONObject().put("dialerProxy","proxy")));
+        JSONObject rule = new JSONObject().put("type","field").put("network","udp").put("port","53").put("outboundTag","dns-tcp");
+        return new JSONObject().put("log",new JSONObject().put("loglevel","warning"))
+            .put("inbounds",new JSONArray().put(inbound)).put("outbounds",new JSONArray().put(outbound).put(dns))
+            .put("routing",new JSONObject().put("rules",new JSONArray().put(rule)));
     }
     private static JSONObject tlsOptions(JSONObject profile,String sni)throws Exception {
         JSONObject options=new JSONObject().put("serverName",sni);

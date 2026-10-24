@@ -23,6 +23,7 @@ final class Events {
     static synchronized void clear(){lines.clear();attempt.clear();}
     static synchronized String hint(){
         String all=String.join("\n",attempt).toLowerCase(Locale.US);
+        if(all.contains("tunneled dns failed"))return "DNS could not return an answer through the tunnel. Open Activity; HTTPS proxy success alone cannot load websites.";
         if(all.contains("tls discovery failed before core startup"))return "TLS discovery failed before Xray started. Check TLS SNI/port, or copy the trusted certificate pin from the working desktop profile. See Activity for retry details.";
         if(all.contains("sslhandshakeexception")&&(all.contains("connection closed")||all.contains("reset by peer")))return "TLS handshake was closed by the server or network. Check TLS SNI, port and server availability.";
         if(all.contains("certificate rejected")||all.contains("certificateexception")||all.contains("certificate verify failed")||all.contains("certpathvalidatorexception")||all.contains("x509")||all.contains("peer cert is unrecognized"))return "TLS certificate rejected. Check TLS SNI / verification name or use a certificate pin you trust.";

@@ -18,8 +18,9 @@ import hev.htproxy.TProxyService;
 public final class TunnelService extends VpnService {
     public static volatile String status="Disconnected";
     public static volatile boolean active=false,verified=false,verifyRequested=false;
-    public static volatile long latency=-1,uploaded=0,downloaded=0,connectedAt=0;
+    public static volatile long latency=-1,uploaded=0,downloaded=0,uploadRate=0,downloadRate=0,connectedAt=0;
     public static volatile String serverName="No active server";
+    private final TrafficMeter trafficMeter=new TrafficMeter();
     private final ScheduledExecutorService worker=Executors.newSingleThreadScheduledExecutor();
     private volatile boolean stopping=true;
     private boolean recoveryExhausted;
@@ -54,15 +55,15 @@ public final class TunnelService extends VpnService {
             try(ServerSocket reserve=new ServerSocket(0,1,InetAddress.getByName("127.0.0.1"))){port=reserve.getLocalPort();}
             startCore();
             update("Verifying server forwarding before enabling VPN…");foreground();
-            latency=Probe.verify(port,settings.timeout());
+            latency=Probe.verify(port,settings.timeout());Probe.verifyDns(port,settings.timeout());
             if(stopping){finish("Disconnected");return;}
             Builder builder=new Builder().setSession("SNI Tunnel").setMtu(1500).addAddress("198.18.0.1",30).addAddress("fd00:198:18::1",126).addRoute("0.0.0.0",0).addRoute("::",0).addDnsServer("1.1.1.1");
             builder.addDisallowedApplication(getPackageName());builder.setMetered(false);
             tun=builder.establish();if(tun==null)throw new Exception("VPN permission was revoked");
             startForwarder();
             if(stopping){finish("Disconnected");return;}
-            verified=true;connectedAt=System.currentTimeMillis();lastCheck=connectedAt;failures=0;retries=0;
-            update("Connected · proxy verified");foreground();
+            trafficMeter.reset(android.os.SystemClock.elapsedRealtime());verified=true;connectedAt=System.currentTimeMillis();lastCheck=connectedAt;failures=0;retries=0;
+            update("VPN active · proxy + DNS verified");foreground();
             monitor=worker.scheduleWithFixedDelay(this::tick,1,1,TimeUnit.SECONDS);
         }catch(Exception|LinkageError error){Events.add("Startup: "+error.getClass().getSimpleName()+": "+error.getMessage());finish("Connection failed · "+Events.hint());}
     }
@@ -87,7 +88,7 @@ public final class TunnelService extends VpnService {
         if(!ready)throw new Exception("Core startup timed out");
     }
     private void startForwarder()throws Exception{
-        String yaml="tunnel:\n  mtu: 1500\n  ipv4: 198.18.0.1\n  ipv6: 'fd00:198:18::1'\nsocks5:\n  address: 127.0.0.1\n  port: "+port+"\n  udp: 'udp'\nmisc:\n  log-level: error\n  connect-timeout: 10000\n  read-write-timeout: 60000\n";
+        String yaml="tunnel:\n  mtu: 1500\n  ipv4: 198.18.0.1\n  ipv6: 'fd00:198:18::1'\nsocks5:\n  address: 127.0.0.1\n  port: "+port+"\n  udp: 'udp'\nmisc:\n  log-level: error\n  connect-timeout: 10000\n  tcp-read-write-timeout: 300000\n  udp-read-write-timeout: 60000\n";
         File hev=new File(getFilesDir(),"active-tunnel.yml");write(hev,yaml);
         if(!TProxyService.TProxyStartService(hev.getAbsolutePath(),tun.getFd()))throw new Exception("Packet forwarder could not start");
     }
@@ -95,11 +96,11 @@ public final class TunnelService extends VpnService {
         if(stopping||recoveryExhausted)return;
         try{
             if(core==null||!core.isAlive()||!TProxyService.TProxyIsRunning()){verified=false;recover(false);return;}
-            long[] stats=TProxyService.TProxyGetStats();if(stats!=null&&stats.length>=4){uploaded=stats[1];downloaded=stats[3];}
+            long[] stats=TProxyService.TProxyGetStats();if(stats!=null&&stats.length>=4){long[] values=trafficMeter.update(stats[1],stats[3],android.os.SystemClock.elapsedRealtime());uploaded=values[0];downloaded=values[1];uploadRate=values[2];downloadRate=values[3];}
             if(!verifyRequested&&(!settings.health()||System.currentTimeMillis()-lastCheck<settings.interval()*1000L))return;
             verifyRequested=false;lastCheck=System.currentTimeMillis();
-            latency=Probe.verify(port,settings.timeout());if(stopping)return;verified=true;failures=0;firstFailure=0;
-            if(!status.equals("Connected · proxy verified"))update("Connected · proxy verified");
+            latency=Probe.verify(port,settings.timeout());Probe.verifyDns(port,settings.timeout());if(stopping)return;verified=true;failures=0;firstFailure=0;
+            if(!status.equals("VPN active · proxy + DNS verified"))update("VPN active · proxy + DNS verified");
         }catch(Exception|LinkageError e){
             verified=false;latency=-1;failures++;if(firstFailure==0)firstFailure=System.currentTimeMillis();
             Events.add("Health: "+e.getClass().getSimpleName()+": "+e.getMessage());
@@ -117,13 +118,13 @@ public final class TunnelService extends VpnService {
         for(int attempt=1;attempt<=3&&!stopping;attempt++){
             Events.beginAttempt();retries=attempt;update("Reconnecting · attempt "+attempt+"/3; VPN retained");foreground();
             try{
-                stopDatapath();
+                stopDatapath();trafficMeter.newEpoch(android.os.SystemClock.elapsedRealtime());uploadRate=downloadRate=0;
                 if(manual)profile=settings.apply(new ProfileStore(this).current());
                 for(int n=0;n<(1<<(attempt-1))*10&&!stopping;n++)Thread.sleep(100);
                 if(stopping)return;
-                startCore();latency=Probe.verify(port,settings.timeout());startForwarder();
+                startCore();latency=Probe.verify(port,settings.timeout());Probe.verifyDns(port,settings.timeout());startForwarder();
                 serverName=profile.name();verified=true;failures=0;firstFailure=0;lastCheck=System.currentTimeMillis();
-                update("Connected · proxy verified");foreground();return;
+                update("VPN active · proxy + DNS verified");foreground();return;
             }catch(Exception|LinkageError e){Events.add("Recovery: "+e.getClass().getSimpleName()+": "+e.getMessage());}
         }
         if(!stopping){recoveryExhausted=true;update("Recovery failed · VPN retained; reconnect or disconnect");foreground();}
@@ -137,7 +138,7 @@ public final class TunnelService extends VpnService {
         stopping=true;verified=false;if(monitor!=null){monitor.cancel(false);monitor=null;}stopDatapath();
         if(tun!=null){try{tun.close();}catch(IOException ignored){}tun=null;}
         if(config!=null)config.delete();new File(getFilesDir(),"active-tunnel.yml").delete();
-        active=false;latency=-1;connectedAt=0;uploaded=0;downloaded=0;verifyRequested=false;
+        active=false;latency=-1;connectedAt=0;uploaded=0;downloaded=0;uploadRate=downloadRate=0;verifyRequested=false;trafficMeter.reset(android.os.SystemClock.elapsedRealtime());
         if(!status.equals(message))update(message);stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();
     }
     @Override public void onRevoke(){stopping=true;worker.execute(()->finish("VPN permission revoked"));}

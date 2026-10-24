@@ -1,3 +1,15 @@
+# 2.1.3 — desktop interface and Android 1.0.4
+
+- Implement the premium navy reference layout with reusable Slint components,
+  bundled Inter typography, rounded cards, blue accents and readable navigation.
+- Show existing health verdicts and measured traffic in seven indicators and a
+  bounded native graph; leave disconnected graphs empty.
+- Retain every page and backend action with single-click/keyboard navigation,
+  server search, tooltips, responsive scrolling and HiDPI support.
+- Translate Android UDP DNS to TCP through VMess and verify the DNS response.
+- Display measured packet-forwarder rates and cumulative recovery-safe totals.
+- Add a separate-UID test app and a TCP-only server regression fixture.
+
 # 2.1.0 — connection health and recovery
 
 - 60-second full-tunnel checks compare explicit proxy and ordinary IPv4 exits, fresh DNS replies, routes and TUN traffic. Probe responses and deadlines are bounded; IPv6 protection is checked without an external IPv6 request.

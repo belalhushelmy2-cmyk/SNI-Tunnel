@@ -1,0 +1,173 @@
+// Native desktop design system. Color/spacing changes do not affect network settings.
+export global Preferences {
+    in-out property <bool> reduced-motion: false;
+    in-out property <bool> compact-layout: false;
+}
+export global Theme {
+    out property <color> bg: #0e141c;
+    out property <color> sidebar: #141c26;
+    out property <color> panel: #171f2a;
+    out property <color> panel-hi: #203650;
+    out property <color> border: #293747;
+    out property <color> text: #f0f4fc;
+    out property <color> muted: #a2b6cf;
+    out property <color> icon: #99b5df;
+    out property <color> accent: #3e9bff;
+    out property <color> upload: #a069ff;
+    out property <color> success: #2ad7a0;
+    out property <color> warn: #edba6a;
+    out property <color> error: #ff6275;
+    out property <length> radius: 9px;
+}
+export component Surface inherits Rectangle {
+    border-radius: Theme.radius;
+    border-width: 1px;
+    border-color: Theme.border;
+    background: Theme.panel;
+    @children
+}
+export component ActionButton inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> primary: false;
+    in property <bool> enabled: true;
+    in property <bool> checked: false;
+    in property <string> tip: root.text;
+    out property <bool> has-focus: focus.has-focus;
+    callback clicked();
+    min-width: content.preferred-width;
+    min-height: 30px;
+    max-height: root.primary ? 48px : 40px;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: focus.has-focus ? #9bcaff : root.primary ? #4b9eff : Theme.border;
+    background: root.primary ? (hit.pressed ? #176ad2 : hit.has-hover ? #409aff : #2485fa) : hit.pressed ? #263c55 : hit.has-hover || root.checked ? #26354a : #202a37;
+    opacity: root.enabled ? 1 : 0.45;
+    animate background { duration: Preferences.reduced-motion ? 0ms : 100ms; }
+    forward-focus: focus;
+    accessible-role: button;
+    accessible-label: root.text == "" ? root.tip : root.text;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { if root.enabled { root.clicked(); } }
+    content := HorizontalLayout {
+        alignment: center; spacing: 8px;
+        padding-left: 13px; padding-right: 13px; padding-top: 8px; padding-bottom: 8px;
+        if root.icon.width > 0: Image { y: (parent.height - self.height)/2; source: root.icon; width: 18px; height: 18px; colorize: root.primary ? #ffffff : Theme.icon; }
+        if root.text != "": Text { text: root.text; color: Theme.text; font-size: 13px; vertical-alignment: center; }
+    }
+    hit := TouchArea { enabled: root.enabled; mouse-cursor: pointer; clicked => { focus.focus(); root.clicked(); } }
+    focus := FocusScope {
+        width: 0px; height: 0px; focus-on-click: false;
+        key-pressed(event) => {
+            if root.enabled && (event.text == " " || event.text == Key.Return) { root.clicked(); return accept; }
+            return reject;
+        }
+    }
+    Tooltip { text: @markdown("\{root.tip}"); }
+}
+export component RailItem inherits Rectangle {
+    in property <string> label;
+    in property <image> icon;
+    in property <bool> selected;
+    callback clicked();
+    height: 48px; vertical-stretch: 0;
+    border-radius: 8px;
+    background: root.selected ? #1e3657 : hit.has-hover ? #1e2b3c : transparent;
+    border-width: 1px;
+    border-color: focus.has-focus ? Theme.accent : transparent;
+    animate background { duration: Preferences.reduced-motion ? 0ms : 100ms; }
+    forward-focus: focus;
+    accessible-role: button; accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+    Rectangle { x: 0px; y: 13px; height: 22px; width: 3px; border-radius: 1.5px; background: root.selected ? Theme.accent : transparent; }
+    Image { x: 18px; y: 13px; width: 22px; height: 22px; source: root.icon; colorize: root.selected ? #63b2ff : Theme.icon; }
+    Text { x: 58px; width: parent.width - 66px; height: parent.height; text: root.label; color: root.selected ? Theme.text : Theme.muted; font-size: 14px; vertical-alignment: center; }
+    hit := TouchArea { mouse-cursor: pointer; clicked => { focus.focus(); root.clicked(); } }
+    focus := FocusScope {
+        width: 0px; height: 0px; focus-on-click: false;
+        key-pressed(event) => { if event.text == " " || event.text == Key.Return { root.clicked(); return accept; } return reject; }
+    }
+}
+export component StatusChip inherits Rectangle {
+    in property <string> text;
+    in property <color> indicator: Theme.muted;
+    border-radius: 6px; border-width: 1px; border-color: Theme.border; background: #1d2938;
+    horizontal-stretch: 0; min-height: 27px;
+    HorizontalLayout { padding-left: 10px; padding-right: 10px; padding-top: 4px; padding-bottom: 4px; spacing: 7px;
+        Rectangle { width: 7px; height: 7px; border-radius: 4px; background: root.indicator; }
+        Text { text: root.text; color: Theme.muted; font-size: 11px; max-width: 180px; overflow: elide; vertical-alignment: center; }
+    }
+    Tooltip { text: @markdown("\{root.text}"); }
+}
+export component HealthTile inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <image> icon;
+    in property <int> state: 0;
+    in property <bool> compact: false;
+    border-radius: 7px; border-width: 1px; border-color: #223040; background: #182330;
+    min-width: 0px;
+    HorizontalLayout { padding: root.compact ? 7px : 10px; spacing: 8px;
+        if !root.compact: Image { y: (parent.height - self.height)/2; source: root.icon; width: 25px; height: 25px; colorize: Theme.icon; }
+        VerticalLayout { spacing: 6px;
+            Text { text: root.label; color: Theme.text; font-size: 11px; overflow: elide; }
+            Text { text: root.value; color: root.value == "Not enabled" || root.value == "Off" ? Theme.muted : root.state == 1 ? Theme.success : root.state == 2 ? Theme.warn : root.state == 3 ? Theme.error : Theme.muted; font-size: 11px; overflow: elide; }
+        }
+    }
+    Tooltip { text: @markdown("\{root.label}: \{root.value}"); }
+}
+export struct PlotSegment { x1: float, y1: float, x2: float, y2: float }
+export component Sparkline inherits Rectangle {
+    in property <[PlotSegment]> data;
+    in property <color> line-color: Theme.accent;
+    background: transparent;
+    clip: true;
+    for segment in root.data: Path {
+        width: root.width; height: root.height;
+        viewbox-width: 600; viewbox-height: 120;
+        fill: transparent; stroke: root.line-color; stroke-width: 1.8px;
+        MoveTo { x: segment.x1; y: segment.y1; }
+        LineTo { x: segment.x2; y: segment.y2; }
+    }
+}
+export component MetricCard inherits Surface {
+    in property <string> label;
+    in property <string> value;
+    in property <string> detail;
+    in property <image> icon;
+    in property <color> tint: Theme.accent;
+    in property <[PlotSegment]> line;
+    in property <bool> show-sparkline: false;
+    min-width: 0px;
+    min-height: 84px;
+    HorizontalLayout { padding: 12px; spacing: 12px;
+        Rectangle { y: (parent.height - self.height)/2; width: 40px; height: 44px; border-radius: 10px; background: root.tint.with-alpha(0.12);
+            Image { source: root.icon; width: 25px; height: 25px; x: (parent.width - self.width)/2; y: (parent.height - self.height)/2; colorize: root.tint; }
+        }
+        VerticalLayout { spacing: 5px;
+            Text { text: root.label; color: Theme.muted; font-size: 12px; }
+            Text { text: root.value; color: Theme.text; font-size: 23px; font-weight: 600; }
+            Text { text: root.detail; color: Theme.muted; font-size: 11px; }
+        }
+        if root.show-sparkline && root.line.length > 0: Sparkline { data: root.line; line-color: root.tint; width: 100px; }
+    }
+}
+
+export component SearchField inherits Surface {
+    in-out property <string> text;
+    out property <bool> has-focus: input.has-focus;
+    callback edited();
+    forward-focus: input;
+    Image { x: 13px; y: (parent.height - self.height)/2; source: @image-url("../assets/v2/search.svg"); width: 19px; height: 19px; colorize: Theme.icon; }
+    input := TextInput {
+        x: 40px; width: parent.width - 100px; height: parent.height;
+        text <=> root.text; color: Theme.text; font-size: 13px;
+        single-line: true; vertical-alignment: center;
+        edited => { root.edited(); }
+    }
+    if root.text == "": Text { x: 40px; width: parent.width - 100px; height: parent.height; text: "Search servers or SNI…"; color: Theme.muted; font-size: 13px; vertical-alignment: center; }
+    Text { x: parent.width - 45px; width: 40px; height: parent.height; text: "Ctrl K"; color: Theme.muted; font-size: 10px; vertical-alignment: center; }
+    Tooltip { text: @markdown("Search saved server names, addresses and SNI values. Ctrl+K focuses search."); }
+}

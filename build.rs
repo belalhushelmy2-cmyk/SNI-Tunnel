@@ -17,6 +17,9 @@ fn build_ui() {
     // Without this the build script would not run again when only the UI
     // file changed, and the old interface would be compiled.
     println!("cargo:rerun-if-changed=ui/app.slint");
+    println!("cargo:rerun-if-changed=ui/design.slint");
+    println!("cargo:rerun-if-changed=assets/v2");
+    println!("cargo:rerun-if-changed=assets/fonts");
     slint_build::compile_with_config(
         "ui/app.slint",
         slint_build::CompilerConfiguration::new().with_style("fluent".into()),

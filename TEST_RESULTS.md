@@ -1,3 +1,26 @@
+# 2.1.3 local validation — 2026-10-24
+
+- Rust: 141 tests passed; five privileged/environment-dependent tests remain
+  explicitly ignored locally. No real profiles or remote server credentials used.
+- Native Slint software rendering: all six pages at 1366×768, 1536×1024,
+  1920×1080, 980×720 and 800×600. Inspected card geometry, labels and scrolling.
+- Pointer/keyboard harness: first-click sidebar actions, Space/Enter, Ctrl+K,
+  five independently clickable server rows in normal/compact layouts, dashboard
+  scrolling and the editor's scrollable fields/fixed footer; 100% and 150% scale.
+- Dashboard regressions ensure traffic comes only from actual engine statistics,
+  history is bounded to 60 samples, disconnected history clears, and proxy-only
+  success never appears as verified full-device or IPv6 forwarding.
+- Desktop changes are confined to presentation, assets and packaging metadata;
+  desktop Xray, transport, routing, DNS, MUX and recovery modules are unchanged.
+- Android results and physical-device limitations: [android/TEST_RESULTS.md](android/TEST_RESULTS.md).
+
+Publication is gated by the Linux, Windows, Arch/offline-package and Android CI
+jobs. Local rendering does not establish native Windows runtime behavior or
+exhaustive physical HiDPI/desktop coverage. A real-user WAN/phone/TV connection
+and a multi-hour soak have not been used as evidence for this release.
+
+## Earlier validation
+
 # 2.1.0 validation
 
 **Published and verified:** [v2.1.0](https://github.com/belalhushelmy2-cmyk/SNI-Tunnel/releases/tag/v2.1.0).

@@ -1,25 +1,32 @@
-# SNI Tunnel 2.1.2 — measured desktop proxy improvements
+# SNI Tunnel 2.1.3 — desktop interface and Android DNS repair
 
-This publishes the desktop performance changes tested and installed locally.
-Existing Linux 2.1.1 connection-health stability fixes are retained.
+## Desktop
 
-- Coalesce buffered HTTP request headers/body to remove a repeatable local
-  delayed-ACK stall (controlled small POST median: 41.036 ms to 0.194 ms).
-- Add optional Balanced, Low Latency and Maximum Throughput settings for the
-  local HTTP/SOCKS relay. TUN traffic bypasses this relay; no gaming/TUN speed
-  claim is made. Low Latency can reduce bulk-download speed, and larger buffers
-  use more memory. See PERFORMANCE_RESULTS.md for complete tradeoffs.
-- Cancel accepted relay tasks on stop and correctly account for initial HTTP data.
-- Bound diagnostic address failover and label DNS + TCP measurements accurately.
-- Preserve existing server credentials, SNI, TLS/security options, MUX, DNS, MTU,
-  routing and pinned core versions. No WARP integration is enabled.
+- Premium navy desktop design following the supplied reference: fixed icon sidebar,
+  rounded connection/server/IP cards, blue actions and bundled Inter typography.
+- Seven connection-health indicators, measured download/upload/session cards and
+  real traffic history. Disconnected charts remain empty.
+- Server search with Ctrl+K, focused keyboard controls, hover feedback, tooltips,
+  adaptive spacing and scrolling at small sizes. Consistent styling on all pages.
+- Retains single-click navigation, keyboard access, server editing, compact
+  layout, scrolling, performance modes and all existing connection settings.
+- No changes to desktop cores, VMess transport/security, DNS, MTU or routing.
 
-Linux: portable tar.gz (used by install.sh), AppImage, DEB, Arch binary package
-and distribution-specific offline dependency bundles. Windows: installer and
-portable ZIP. Android phone/TV APKs remain the unchanged, signed 1.0.3 builds.
+## Android phone and TV 1.0.4
 
-Validation: 139 Rust and 21 Linux helper tests passed for the production changes;
-Windows/Linux packaging CI is required before publication. Physical Windows
-networking, long-session stability, roaming and suspend/resume are not claimed.
-The installer command installs/updates the latest published release, preserving
-profiles and registering the app launcher.
+- Fix a reproduced failure where HTTPS proxy checks pass but another app cannot
+  resolve names when remote UDP DNS is blocked. UDP DNS now travels as TCP
+  through the same VMess connection and resolver; no direct DNS bypass.
+- Check tunneled DNS before reporting probe success and during monitoring.
+- Show actual per-second transfer rates separately from sent/received totals.
+  Totals survive core recovery. Use the supported native forwarder timeout keys.
+- Existing encrypted profiles, application IDs and signing identity are retained.
+
+A separately installed test app reproduced DNS failure on 1.0.3 and verified a
+complete 2 MiB download by hostname on 1.0.4 for both flavors with remote UDP
+blocked. This is controlled emulator evidence, not confirmation of a repair on
+every physical phone/TV or of the user's older TLS failure. TLS verification
+preferences and custom SNI/Host are preserved.
+
+Linux packages, Windows installer/portable ZIP, and signed phone/TV APKs are
+provided below. The existing install.sh command selects the Latest desktop release.

@@ -44,6 +44,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let windows = Rc::new(RefCell::new(Vec::new()));
     slint::platform::set_platform(Box::new(PreviewPlatform(windows.clone())))?;
     let ui = AppWindow::new()?;
+    ui.set_app_version(format!("v{}", env!("CARGO_PKG_VERSION")).into());
     ui.on_matches(|text, query| text.to_lowercase().contains(&query.to_lowercase()));
     ui.set_servers(slint::ModelRc::new(slint::VecModel::from(
         (0..5)
@@ -66,10 +67,84 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     main.dispatch_event(WindowEvent::ScaleFactorChanged {
         scale_factor: scale,
     });
+    main.set_size(LogicalSize::new(1366., 768.));
+    save(&main, &directory, "premium-overview-1366");
+    if std::env::args().any(|arg| arg == "--render-only") {
+        for (width, height) in [
+            (1366., 768.),
+            (1536., 1024.),
+            (1920., 1080.),
+            (980., 720.),
+            (800., 600.),
+        ] {
+            main.set_size(LogicalSize::new(width, height));
+            for tab in 0..6 {
+                ui.set_tab(tab);
+                save(
+                    &main,
+                    &directory,
+                    &format!("premium-{}x{}-page-{tab}", width as i32, height as i32),
+                );
+            }
+        }
+        println!("Rendered six native pages at five window sizes, scale {scale}");
+        return Ok(());
+    }
+    // Exercise the actual overview hit targets without starting a network engine.
+    let action = Rc::new(std::cell::Cell::new(0));
+    let state = action.clone();
+    ui.on_connect_clicked(move || state.set(1));
+    let state = action.clone();
+    ui.on_disconnect_clicked(move || state.set(2));
+    let state = action.clone();
+    ui.on_verify_full_tunnel_clicked(move || state.set(3));
+    let state = action.clone();
+    ui.on_refresh_ip_clicked(move || state.set(4));
+    let click = |x, y| {
+        let position = LogicalPosition::new(x, y);
+        main.dispatch_event(WindowEvent::PointerMoved { position });
+        main.dispatch_event(WindowEvent::PointerPressed {
+            position,
+            button: PointerEventButton::Left,
+        });
+        main.dispatch_event(WindowEvent::PointerReleased {
+            position,
+            button: PointerEventButton::Left,
+        });
+    };
+    click(1189., 169.);
+    assert_eq!(action.get(), 1, "primary Connect reaches backend callback");
+    ui.set_connection_live(true);
+    click(1189., 169.);
+    assert_eq!(
+        action.get(),
+        2,
+        "primary Disconnect reaches backend callback"
+    );
+    ui.set_connection_live(false);
+    ui.set_connection_busy(true);
+    click(1189., 169.);
+    assert_eq!(action.get(), 2, "Cancel reaches disconnect callback");
+    ui.set_connection_busy(false);
+    click(1240., 390.);
+    assert_eq!(
+        action.get(),
+        3,
+        "Verify reaches existing full-check callback"
+    );
+    click(1150., 298.);
+    assert_eq!(
+        action.get(),
+        4,
+        "public IP refresh reaches existing callback"
+    );
+    click(1240., 298.);
+    assert_eq!(ui.get_tab(), 1, "Switch server opens server selection");
+    ui.set_tab(0);
     main.set_size(LogicalSize::new(980., 900.));
     // A complete first click must activate each item, including icon/padding hits.
     for (index, x) in [(1, 25.), (2, 80.), (3, 151.), (4, 25.), (5, 80.), (0, 151.)] {
-        let position = LogicalPosition::new(x, 114. + index as f32 * 50.);
+        let position = LogicalPosition::new(x, 122. + index as f32 * 55.);
         main.dispatch_event(WindowEvent::PointerMoved { position });
         main.dispatch_event(WindowEvent::PointerPressed {
             position,
@@ -95,6 +170,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "Space/Enter must activate the focused menu item"
         );
     }
+    main.dispatch_event(WindowEvent::KeyPressed {
+        text: slint::platform::Key::Control.into(),
+    });
+    main.dispatch_event(WindowEvent::KeyPressed { text: "k".into() });
+    main.dispatch_event(WindowEvent::KeyReleased { text: "k".into() });
+    main.dispatch_event(WindowEvent::KeyReleased {
+        text: slint::platform::Key::Control.into(),
+    });
+    assert!(
+        ui.get_search_focused(),
+        "Ctrl+K focuses native server search"
+    );
     for index in 0..6 {
         ui.set_tab(index);
         save(&main, &directory, &format!("page-{index}"));
@@ -108,8 +195,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         used.set(-1);
         // Fontconfig may resolve sans-serif to a wider user-selected font.
         // Search the action area while still requiring the correct row callback.
-        for x in (450..650).step_by(8) {
-            let position = LogicalPosition::new(x as f32, 284. + index as f32 * 88.);
+        for x in (540..585).step_by(8) {
+            let position = LogicalPosition::new(x as f32, 338. + index as f32 * 88.);
             main.dispatch_event(WindowEvent::PointerMoved { position });
             main.dispatch_event(WindowEvent::PointerPressed {
                 position,
@@ -135,7 +222,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut compact_rows = std::collections::BTreeSet::new();
     for y in (240..700).step_by(10) {
         used.set(-1);
-        for x in (450..650).step_by(8) {
+        for x in (540..585).step_by(8) {
             let position = LogicalPosition::new(x as f32, y as f32);
             main.dispatch_event(WindowEvent::PointerMoved { position });
             main.dispatch_event(WindowEvent::PointerPressed {

@@ -1,3 +1,26 @@
+# Android 1.0.4 validation — 2026-10-24
+
+- Signed phone/TV release builds passed; 33 Java tests per flavor (66 executions),
+  zero lint errors. Existing application IDs/signing identity retained; versionCode 5.
+- A separate-UID Android test app reproduced the 1.0.3 failure: proxy HTTPS
+  succeeded but hostname resolution failed when the synthetic server dropped UDP.
+- With 1.0.4, both flavors resolved the fixture hostname and downloaded 2 MiB
+  with SHA-256 91d3beb88a9b2f778a6c44a1c53b63d3c79931845a9aef84b3fb414610bd1938.
+  The payload was loopback-only; these timings are not WAN performance evidence.
+- Both flavors also passed the TLS 1.3 rejection → TLS 1.2 discovery → native
+  Xray TLS 1.2 forwarding regression. Disconnect/cleanup completed.
+- Nine new tests cover DNS routing through VMess without a freedom/direct
+  outbound, preserving profile fields, reply ID/header validation, classified
+  DNS failures and rate/total continuity across core recovery.
+- Reproduction sources are in [test-support](test-support/README.md); the test-only
+  networkprobe package is never part of the phone or TV release APK.
+
+Physical phone/TV, the user's real server and custom Private DNS providers remain
+unverified. Probe success describes the measured proxy/DNS path, not every app's
+route. No private profile/UUID/signing key is included in release artifacts.
+
+## Earlier validation
+
 # Android 1.0.3 validation — 2026-10-23
 
 - Signed release phone/TV builds succeeded; 24 Java tests per flavor passed

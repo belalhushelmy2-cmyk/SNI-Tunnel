@@ -1,0 +1,7 @@
+plugins { id 'com.android.application' }
+android {
+ namespace 'com.snitunnel.networkprobe'
+ compileSdk 35
+ defaultConfig { applicationId 'com.snitunnel.networkprobe'; minSdk 29; targetSdk 35; versionCode 1; versionName '1' }
+ compileOptions { sourceCompatibility JavaVersion.VERSION_1_8; targetCompatibility JavaVersion.VERSION_1_8 }
+}

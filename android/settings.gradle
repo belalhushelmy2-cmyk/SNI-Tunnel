@@ -2,3 +2,7 @@ pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal()
 dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
 rootProject.name = 'SniTunnelAndroid'
 include ':app'
+
+// Separate UID for emulator tests: must traverse the VPN like another app.
+include ':networkprobe'
+project(':networkprobe').projectDir = file('test-support/networkprobe')

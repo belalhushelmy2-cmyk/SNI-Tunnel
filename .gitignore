@@ -20,3 +20,6 @@ __pycache__/
 
 # Temporary checkpoint benchmark adapter (created and removed by benchmark-proxy.py).
 /examples/__perf_baseline_generated.rs
+
+# Instrumentation fixture output is not source.
+/android/test-support/networkprobe/build/

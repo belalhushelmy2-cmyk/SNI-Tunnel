@@ -17,7 +17,7 @@ final class Probe {
         for(String[] provider:new String[][]{{"api.ipify.org","/"},{"1.1.1.1","/cdn-cgi/trace"}}){
             try{return verifyProvider(port,provider[0],provider[1],timeout);}catch(Exception e){last=e;}
         }
-        throw new Exception("Both HTTPS providers failed: "+(last==null?"unknown error":last.getMessage()),last);
+        throw new Exception("Both HTTPS providers failed: "+(last==null?"unknown error":last.getClass().getSimpleName()+": "+last.getMessage()),last);
     }
     private static long verifyProvider(int port,String host,String path,int timeout) throws Exception {
         long start=System.nanoTime();
@@ -38,6 +38,31 @@ final class Probe {
                 return (System.nanoTime()-start)/1000000;
             } finally { tls.close(); }
         } finally { deadline.cancel(false);socket.close(); }
+    }
+    /** Exercise the same SOCKS UDP -> tunneled TCP DNS route used by app DNS. */
+    static void verifyDns(int port,int timeout) throws Exception {
+        try(Socket control=new Socket();java.net.DatagramSocket udp=new java.net.DatagramSocket(new InetSocketAddress("127.0.0.1",0))) {
+            control.connect(new InetSocketAddress("127.0.0.1",port),timeout*1000);control.setSoTimeout(timeout*1000);udp.setSoTimeout(timeout*1000);
+            DataInputStream in=new DataInputStream(control.getInputStream());OutputStream out=control.getOutputStream();
+            out.write(new byte[]{5,1,0});out.flush();if(in.readUnsignedByte()!=5||in.readUnsignedByte()!=0)throw new Exception("DNS SOCKS authentication failed");
+            int local=udp.getLocalPort();out.write(new byte[]{5,3,0,1,127,0,0,1,(byte)(local>>8),(byte)local});out.flush();
+            if(in.readUnsignedByte()!=5||in.readUnsignedByte()!=0||in.readUnsignedByte()!=0)throw new Exception("DNS UDP association failed");
+            int type=in.readUnsignedByte(),size=type==1?4:type==4?16:type==3?in.readUnsignedByte():-1;
+            if(size<0)throw new Exception("Invalid DNS relay address");byte[] address=new byte[size];in.readFully(address);int relayPort=in.readUnsignedShort();
+            if(relayPort==0)throw new Exception("Invalid DNS relay port");
+            int id=new java.security.SecureRandom().nextInt(65536);
+            byte[] query=new byte[]{(byte)(id>>8),(byte)id,1,0,0,1,0,0,0,0,0,0,7,'e','x','a','m','p','l','e',3,'c','o','m',0,0,1,0,1};
+            byte[] packet=new byte[10+query.length];packet[3]=1;packet[4]=1;packet[5]=1;packet[6]=1;packet[7]=1;packet[9]=53;System.arraycopy(query,0,packet,10,query.length);
+            udp.send(new java.net.DatagramPacket(packet,packet.length,new InetSocketAddress("127.0.0.1",relayPort)));
+            byte[] response=new byte[4096];java.net.DatagramPacket reply=new java.net.DatagramPacket(response,response.length);udp.receive(reply);
+            validateDnsReply(response,reply.getLength(),id);
+        }catch(Exception e){throw new Exception("Tunneled DNS failed: "+e.getClass().getSimpleName()+": "+e.getMessage(),e);}
+    }
+    static void validateDnsReply(byte[] bytes,int length,int id) throws Exception {
+        if(length<4||bytes[0]!=0||bytes[1]!=0||bytes[2]!=0)throw new Exception("Invalid SOCKS DNS datagram");
+        int type=bytes[3]&255,offset=type==1?10:type==4?22:type==3&&length>=5?7+(bytes[4]&255):-1;
+        if(offset<0||length<offset+12)throw new Exception("Incomplete DNS response");
+        if(((bytes[offset]&255)<<8|(bytes[offset+1]&255))!=id||(bytes[offset+2]&128)==0||(bytes[offset+3]&15)!=0||(bytes[offset+6]==0&&bytes[offset+7]==0))throw new Exception("DNS response contains no successful matching answer");
     }
     static void handshake(Socket socket,String host,int port) throws Exception {
         OutputStream out=socket.getOutputStream();DataInputStream in=new DataInputStream(socket.getInputStream());

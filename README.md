@@ -1,6 +1,6 @@
 ## Android phone and Android TV
 
-Native Android 1.0.3 phone/TV apps are available in the [Android project](android/README.md).
+Native Android 1.0.4 phone/TV apps are available in the [Android project](android/README.md).
 Both require Android 10+ and 64-bit ARM/x86_64 userspace. They bundle Xray and
 use Android's VPN permission flow. TV adds a Leanback launcher and D-pad controls.
 See [Android validation](android/TEST_RESULTS.md) and its documented limits.
@@ -8,7 +8,8 @@ Desktop and Android versions, package IDs and user stores are separate.
 
 ## Install or update on Linux
 
-Desktop release 2.1.2 includes the measured proxy performance controls. The command
+Desktop release 2.1.3 includes the measured proxy performance controls and a
+premium dark desktop interface with a connection-health dashboard and real traffic history. The command
 below updates an existing installation to the latest published package.
 
 ```bash

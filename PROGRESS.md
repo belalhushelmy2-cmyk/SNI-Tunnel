@@ -1,3 +1,16 @@
+# Premium desktop UI and Android DNS repair — 2.1.3
+
+Rebuilt the native Slint interface around the supplied premium reference with
+reusable design tokens/components, bundled Inter, a fixed navigation rail,
+connection/server/IP/health/metric cards and a real bounded native traffic graph.
+All pages and backend callbacks remain; desktop networking modules are unchanged.
+Density updates after resize events to avoid a responsive layout binding
+cycle. See TEST_RESULTS.md for rendering, interaction and validation scope.
+
+Android 1.0.4 fixes a reproduced UDP-DNS failure by forwarding those DNS queries
+as TCP through the existing VMess outbound. Separate-app emulator downloads and
+TLS fallback passed on phone/TV; physical-device behavior remains unverified.
+
 # Five-profile list hotfix — 2.0.1
 
 Reproduced the user's five-saved/one-visible report. The repeated ListView root
