@@ -8,7 +8,7 @@ Desktop and Android versions, package IDs and user stores are separate.
 
 ## Install or update on Linux
 
-Desktop release 2.1.3 includes the measured proxy performance controls and a
+Desktop release 2.1.4 includes the measured proxy performance controls and a
 premium dark desktop interface with a connection-health dashboard and real traffic history. The command
 below updates an existing installation to the latest published package.
 

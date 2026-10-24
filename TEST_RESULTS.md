@@ -1,3 +1,18 @@
+# 2.1.4 validation
+
+Local checks cover the real native UI at 100%/150% scaling, equal/stable metric
+geometry with changing numerical text, measured bar rendering, and existing
+navigation/action/scrolling regressions. Latency regression covers the 60-probe
+bound, failed-probe gaps and real zero-millisecond samples. No new networking
+probes or desktop network implementation changes are introduced.
+
+Linux/Windows/Arch/Android CI gates must pass before publication. Android 1.0.4
+APKs are reused byte-for-byte with pinned SHA-256 values and their existing
+signing identity; see android/TEST_RESULTS.md for their controlled evidence and
+physical-device limitations.
+
+## Earlier validation
+
 # 2.1.3 local validation — 2026-10-24
 
 - Rust: 141 tests passed; five privileged/environment-dependent tests remain

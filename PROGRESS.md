@@ -1,3 +1,10 @@
+# Dashboard follow-up — 2.1.4
+
+Restored actual-statistics traffic bars, fixed indicator dimensions, and added a
+last-60-probe DNS + TCP latency graph using the existing reader. No extra probes;
+failed readings are gaps, and history is reset for a different endpoint. Desktop
+networking modules are unchanged. Latest signed Android 1.0.4 APKs are included.
+
 # Premium desktop UI and Android DNS repair — 2.1.3
 
 Rebuilt the native Slint interface around the supplied premium reference with

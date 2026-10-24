@@ -3,7 +3,7 @@
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
 use slint::platform::{Platform, PlatformError, PointerEventButton, WindowAdapter, WindowEvent};
 use slint::{ComponentHandle, LogicalPosition, LogicalSize, Rgb8Pixel, SharedPixelBuffer};
-use sni_tunnel::gui::{AppWindow, ServerEditor, ServerRow};
+use sni_tunnel::gui::{AppWindow, PlotSegment, ServerEditor, ServerRow, TrafficPoint};
 use std::{cell::RefCell, fs, path::Path, rc::Rc};
 
 struct PreviewPlatform(Rc<RefCell<Vec<Rc<MinimalSoftwareWindow>>>>);
@@ -90,6 +90,103 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Rendered six native pages at five window sizes, scale {scale}");
         return Ok(());
     }
+    // Numeric changes must not resize health or metric cards.
+    let before_values = save(&main, &directory, "cards-before-values");
+    ui.set_down_speed("1024.99 MB/s".into());
+    ui.set_up_speed("1 B/s".into());
+    ui.set_uptime("127:59:59".into());
+    ui.set_down_total("999.99 TB".into());
+    ui.set_latency("DNS + TCP latency unavailable · retrying / 3 s".into());
+    ui.set_health_tun("Verified".into());
+    ui.set_health_dns("Checking".into());
+    ui.set_health_ipv4("Proxy only".into());
+    ui.set_health_ipv6("Protected".into());
+    let after_values = save(&main, &directory, "cards-after-values");
+    let pixel = |data: &[u8], x: usize, y: usize| {
+        let x = (x as f32 * scale) as usize;
+        let y = (y as f32 * scale) as usize;
+        let offset = (y * main.size().width as usize + x) * 3;
+        data[offset..offset + 3].to_vec()
+    };
+    for y in [420, 500] {
+        for x in 254..1333 {
+            assert_eq!(
+                pixel(&before_values, x, y),
+                pixel(&after_values, x, y),
+                "card borders must stay fixed when numeric/status text changes at {x},{y}"
+            );
+        }
+    }
+    ui.set_down_speed("0 B/s".into());
+    ui.set_up_speed("0 B/s".into());
+    ui.set_uptime("00:00".into());
+    ui.set_down_total("0 B".into());
+    ui.set_latency("Not measured".into());
+    for setter in [
+        AppWindow::set_health_tun,
+        AppWindow::set_health_dns,
+        AppWindow::set_health_ipv4,
+        AppWindow::set_health_ipv6,
+    ] {
+        setter(&ui, "Not verified".into());
+    }
+    // Explicit offline renderer fixture, never used by the application backend.
+    ui.set_traffic(slint::ModelRc::new(slint::VecModel::from(
+        (0..60)
+            .map(|index| TrafficPoint {
+                up: ((index % 10) * 5) as f32,
+                down: ((index % 7) * 20) as f32,
+            })
+            .collect::<Vec<_>>(),
+    )));
+    ui.set_traffic_peak(120.0);
+    ui.set_latency_values(slint::ModelRc::new(slint::VecModel::from(vec![
+        20.0, 30.0, -1.0, 10.0, 50.0,
+    ])));
+    ui.set_latency_peak(50.0);
+    ui.set_latency_good_count(4);
+    ui.set_latency_line(slint::ModelRc::new(slint::VecModel::from(vec![
+        PlotSegment {
+            x1: 0.0,
+            y1: 72.2,
+            x2: 150.0,
+            y2: 48.8,
+        },
+        PlotSegment {
+            x1: 450.0,
+            y1: 95.6,
+            x2: 600.0,
+            y2: 2.0,
+        },
+    ])));
+    let bars = save(&main, &directory, "offline-chart-fixture");
+    let count_color = |data: &[u8], color: [u8; 3]| {
+        (650..744)
+            .flat_map(|y| (340..776).map(move |x| (x, y)))
+            .filter(|&(x, y)| pixel(data, x, y) == color)
+            .count()
+    };
+    assert!(
+        count_color(&bars, [62, 155, 255]) > 100,
+        "download bars render from samples"
+    );
+    assert!(
+        count_color(&bars, [160, 105, 255]) > 100,
+        "upload bars render from samples"
+    );
+    ui.set_download_visible(false);
+    let hidden = save(&main, &directory, "offline-download-hidden");
+    assert_eq!(
+        count_color(&hidden, [62, 155, 255]),
+        0,
+        "download toggle hides bars"
+    );
+    ui.set_download_visible(true);
+    ui.set_traffic(Default::default());
+    ui.set_traffic_peak(1.0);
+    ui.set_latency_values(Default::default());
+    ui.set_latency_line(Default::default());
+    ui.set_latency_good_count(0);
     // Exercise the actual overview hit targets without starting a network engine.
     let action = Rc::new(std::cell::Cell::new(0));
     let state = action.clone();

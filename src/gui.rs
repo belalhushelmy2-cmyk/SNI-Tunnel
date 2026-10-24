@@ -481,6 +481,7 @@ fn spawn_latency_reader(
         let mut ticker = tokio::time::interval(Duration::from_secs(3));
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut previous = None;
+        let mut history = std::collections::VecDeque::new();
         loop {
             ticker.tick().await;
             let target = latency_target(&cfg, &state);
@@ -490,7 +491,14 @@ fn spawn_latency_reader(
                 } else {
                     "TCP latency · no server"
                 };
-                let _ = weak.upgrade_in_event_loop(move |ui| ui.set_latency(message.into()));
+                history.clear();
+                let (cfg, state, expected) = (cfg.clone(), state.clone(), target.clone());
+                let _ = weak.upgrade_in_event_loop(move |ui| {
+                    if latency_target(&cfg, &state) == expected {
+                        ui.set_latency(message.into());
+                        publish_latency_chart(&ui, &std::collections::VecDeque::new());
+                    }
+                });
                 previous = target.clone();
             }
             let Some((_, address, port)) = target.as_ref() else {
@@ -498,6 +506,8 @@ fn spawn_latency_reader(
             };
             let reading = crate::latency::measure(address, *port).await.ok();
             let text = crate::latency::display(reading);
+            record_latency(&mut history, reading);
+            let samples = history.clone();
             let cfg = cfg.clone();
             let state = state.clone();
             let _ = weak.upgrade_in_event_loop(move |ui| {
@@ -505,10 +515,54 @@ fn spawn_latency_reader(
                 // an old server's result to the newly selected server.
                 if latency_target(&cfg, &state) == target {
                     ui.set_latency(text.into());
+                    publish_latency_chart(&ui, &samples);
                 }
             });
         }
     })
+}
+
+// Consume the existing reader's measurements; no additional probes or transport changes.
+fn record_latency(history: &mut std::collections::VecDeque<Option<u128>>, reading: Option<u128>) {
+    if history.len() == 60 {
+        history.pop_front();
+    }
+    history.push_back(reading);
+}
+fn latency_segments(history: &std::collections::VecDeque<Option<u128>>) -> Vec<PlotSegment> {
+    let peak = history.iter().flatten().copied().max().unwrap_or(1).max(1) as f32;
+    (1..history.len())
+        .filter_map(|index| {
+            let (Some(before), Some(after)) = (history[index - 1], history[index]) else {
+                return None;
+            };
+            Some(PlotSegment {
+                x1: 600.0 * (index - 1) as f32 / (history.len() - 1) as f32,
+                y1: 119.0 - 117.0 * before as f32 / peak,
+                x2: 600.0 * index as f32 / (history.len() - 1) as f32,
+                y2: 119.0 - 117.0 * after as f32 / peak,
+            })
+        })
+        .collect()
+}
+fn publish_latency_chart(ui: &AppWindow, history: &std::collections::VecDeque<Option<u128>>) {
+    let peak = history.iter().flatten().copied().max().unwrap_or(1).max(1);
+    ui.set_latency_peak(peak as f32);
+    ui.set_latency_top(format!("{peak} ms").into());
+    ui.set_latency_good_count(history.iter().flatten().count() as i32);
+    ui.set_latency_current(match history.back() {
+        Some(Some(0)) => "<1 ms".into(),
+        Some(Some(ms)) => format!("{ms} ms").into(),
+        Some(None) => "Unavailable".into(),
+        None => "Not measured".into(),
+    });
+    ui.set_latency_values(ModelRc::new(VecModel::from(
+        history
+            .iter()
+            .map(|reading| reading.map_or(-1.0, |ms| ms as f32))
+            .collect::<Vec<_>>(),
+    )));
+    ui.set_latency_line(ModelRc::new(VecModel::from(latency_segments(history))));
 }
 
 fn phase_color(p: Phase) -> slint::Color {
@@ -1958,6 +2012,28 @@ mod dashboard_presentation_tests {
         );
         assert!(history.is_empty());
         assert!(chart_segments(&history, 0, false).is_empty());
+    }
+    #[test]
+    fn latency_history_keeps_real_failures_as_gaps_and_bounds_samples() {
+        let mut history = std::collections::VecDeque::new();
+        for value in [Some(10), Some(20), None, Some(30), Some(40)] {
+            record_latency(&mut history, value);
+        }
+        let segments = latency_segments(&history);
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[0].x2, 150.0);
+        assert_eq!(segments[1].x1, 450.0);
+        for _ in 0..70 {
+            record_latency(&mut history, None);
+        }
+        assert_eq!(history.len(), 60);
+        assert!(latency_segments(&history).is_empty());
+        assert!(history.iter().all(Option::is_none));
+        history.clear();
+        record_latency(&mut history, Some(0));
+        assert!(latency_segments(&history).is_empty());
+        record_latency(&mut history, Some(1));
+        assert_eq!(latency_segments(&history).len(), 1);
     }
     #[test]
     fn proxy_success_never_presents_full_tunnel_or_ipv6_success() {

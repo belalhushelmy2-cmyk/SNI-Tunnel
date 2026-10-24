@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: Publish v2.1.3 after successful builds
+        description: Publish v2.1.4 after successful builds
         type: boolean
         default: false
 permissions:
@@ -16,7 +16,7 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_BUILD_JOBS: '4'
   RUST_MIN_STACK: '16777216'
-  RELEASE_TAG: v2.1.3
+  RELEASE_TAG: v2.1.4
 
 concurrency:
   group: sni-release-${{ github.ref }}
@@ -93,18 +93,18 @@ jobs:
       - name: Build and smoke-test AppImage
         run: |
           python3 packaging/linux/appimage.py
-          xvfb-run -a python3 packaging/linux/verify-appimage.py releases/v2/linux/SNI-Tunnel-V2-2.1.3-x86_64.AppImage
+          xvfb-run -a python3 packaging/linux/verify-appimage.py releases/v2/linux/SNI-Tunnel-V2-2.1.4-x86_64.AppImage
       - name: Verify Debian payload without installing
         run: |
-          dpkg-deb --info releases/v2/linux/sni-tunnel-v2_2.1.3_amd64.deb
-          dpkg-deb --extract releases/v2/linux/sni-tunnel-v2_2.1.3_amd64.deb target/deb-check
+          dpkg-deb --info releases/v2/linux/sni-tunnel-v2_2.1.4_amd64.deb
+          dpkg-deb --extract releases/v2/linux/sni-tunnel-v2_2.1.4_amd64.deb target/deb-check
           target/deb-check/usr/lib/sni-tunnel-v2/sni-tunnel --help
           cmp target/deb-check/usr/lib/sni-tunnel-v2/sni-tunnel target/x86_64-unknown-linux-gnu/release/sni-tunnel
       - name: Bundle Ubuntu 24.04 dependencies and executable offline installer
         run: ./packaging/offline/ubuntu.sh
       - name: Package complete source and release documentation
         run: |
-          python3 packaging/release-source.py releases/v2/linux/SNI-Tunnel-V2-2.1.3-source.zip
+          python3 packaging/release-source.py releases/v2/linux/SNI-Tunnel-V2-2.1.4-source.zip
           cp TEST_RESULTS.md MIGRATION.md RELEASE_NOTES.md releases/v2/linux/
       - uses: actions/upload-artifact@v4
         with:
@@ -163,7 +163,7 @@ jobs:
         run: |
           & target/release/sni-tunnel.exe --help
           if ($LASTEXITCODE -ne 0) { throw 'Windows executable startup failed' }
-          if ((Get-Item target/release/sni-tunnel.exe).VersionInfo.ProductVersion -ne '2.1.3') { throw 'Windows version resource mismatch' }
+          if ((Get-Item target/release/sni-tunnel.exe).VersionInfo.ProductVersion -ne '2.1.4') { throw 'Windows version resource mismatch' }
           $seven = Join-Path $env:ProgramFiles '7-Zip/7z.exe'
           & $seven x -y releases/v2/windows/SNI-Tunnel-V2-Setup-x64.exe '-otarget/installer-check'
           if ($LASTEXITCODE -ne 0) { throw 'Installer extraction failed' }
@@ -218,11 +218,11 @@ jobs:
           pattern: v2-*
           path: release
           merge-multiple: true
-      - name: Retrieve signed Android 1.0.4 APKs staged in this release draft
+      - name: Retrieve verified signed Android 1.0.4 APKs from the published release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'SNI-Tunnel-Android*-1.0.4.apk' --dir release
+          gh release download v2.1.3 --repo "$GITHUB_REPOSITORY" --pattern 'SNI-Tunnel-Android*-1.0.4.apk' --dir release
           python3 - <<'PYAPK'
           import json, hashlib
           from pathlib import Path
@@ -236,9 +236,9 @@ jobs:
           from pathlib import Path
           import hashlib
           root = Path('release')
-          required = ['SNI-Tunnel-V2-Setup-x64.exe', 'SNI-Tunnel-V2-2.1.3-x86_64.AppImage', 'sni-tunnel-v2_2.1.3_amd64.deb', 'sni-tunnel-v2_2.1.3_amd64.tar.gz', 'SNI-Tunnel-V2-2.1.3-source.zip', 'TEST_RESULTS.md', 'MIGRATION.md', 'RELEASE_NOTES.md']
-          required += ['sni-tunnel-v2-bin-2.1.3-1-x86_64.pkg.tar.zst', 'SNI-Tunnel-V2-2.1.3-windows-x64-portable.zip']
-          required += [f'SNI-Tunnel-V2-2.1.3-{platform}-x86_64-offline.{ext}' for platform in ['arch','ubuntu-24.04'] for ext in ['bin','tar.gz']]
+          required = ['SNI-Tunnel-V2-Setup-x64.exe', 'SNI-Tunnel-V2-2.1.4-x86_64.AppImage', 'sni-tunnel-v2_2.1.4_amd64.deb', 'sni-tunnel-v2_2.1.4_amd64.tar.gz', 'SNI-Tunnel-V2-2.1.4-source.zip', 'TEST_RESULTS.md', 'MIGRATION.md', 'RELEASE_NOTES.md']
+          required += ['sni-tunnel-v2-bin-2.1.4-1-x86_64.pkg.tar.zst', 'SNI-Tunnel-V2-2.1.4-windows-x64-portable.zip']
+          required += [f'SNI-Tunnel-V2-2.1.4-{platform}-x86_64-offline.{ext}' for platform in ['arch','ubuntu-24.04'] for ext in ['bin','tar.gz']]
           import json
           required += list(json.loads(Path('android/release-assets.json').read_text()))
           assert all((root/name).is_file() for name in required)
@@ -258,9 +258,9 @@ jobs:
       - name: Upload all assets to a draft first
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.1.3
+          tag_name: v2.1.4
           target_commitish: ${{ github.sha }}
-          name: SNI Tunnel V2 2.1.3
+          name: SNI Tunnel V2 2.1.4
           body_path: release/RELEASE_NOTES.md
           draft: true
           prerelease: false

@@ -1,3 +1,12 @@
+# 2.1.4 — stable dashboard cards and measured latency history
+
+- Restore paired download/upload bars using actual traffic statistics.
+- Keep metric cards, health tiles and status indicators at stable sizes as values change.
+- Add a last-60-probe DNS + TCP latency graph using the existing three-second reader;
+  failed probes leave gaps and changing server clears history. No additional probes.
+- Preserve the centered button icons, every page, all settings and desktop networking.
+- Include the signed Android/TV 1.0.4 DNS repair from 2.1.3 unchanged.
+
 # 2.1.3 — desktop interface and Android 1.0.4
 
 - Implement the premium navy reference layout with reusable Slint components,
