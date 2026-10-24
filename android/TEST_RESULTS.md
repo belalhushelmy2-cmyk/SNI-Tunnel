@@ -1,3 +1,22 @@
+# Android 1.0.5 UI validation — 2026-10-24
+
+- Signed phone and TV release builds passed; 33 JVM tests per flavor and zero
+  lint errors. Both signatures match 1.0.4; application IDs retained, versionCode 6.
+- API 35 emulator: adb install -r upgraded both existing apps while retaining
+  synthetic profiles. Six pages reached using phone menu and TV sidebar.
+- Tall display-cutout overlay: phone menu is below the notch and opens on one tap.
+- TV D-pad moved native focus between controls. The new metric cards show their
+  full totals without resizing; phone uses two columns and TV uses four.
+- Phone and TV imported and selected a synthetic profile, edited Allow insecure,
+  saved and reopened it to verify persistence. No real profile credentials used.
+- Changes are presentation-only. The 1.0.4 DNS/transfer and TLS fallback code is
+  retained byte-for-byte; earlier controlled networking evidence is below.
+
+Physical-device networking/remote behavior remains unverified. Emulator UI checks
+are not evidence about the user's server or WAN speed.
+
+## Earlier validation
+
 # Android 1.0.4 validation — 2026-10-24
 
 - Signed phone/TV release builds passed; 33 Java tests per flavor (66 executions),

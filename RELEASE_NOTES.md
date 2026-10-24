@@ -1,19 +1,20 @@
-# SNI Tunnel 2.1.4 — traffic bars and latency history
+# SNI Tunnel 2.1.5 — a clearer desktop, phone and TV
 
-- Paired download/upload bars show real traffic history again.
-- Fixed, equal metric cards and health indicators keep their geometry when numbers change.
-- A separate latency chart uses the existing DNS + TCP reader every three seconds.
-  It retains the last 60 probes; failed probes leave gaps rather than fabricated zeros.
-  Selecting another endpoint clears its history. This is server connect latency, not
-  an HTTPS or full-tunnel health measurement.
-- Centered action icons, readable premium navigation and all existing pages/settings.
-- Desktop Xray-core, routing, DNS, transport, MUX and recovery behavior are unchanged.
+- Restore the compact desktop overview: slim navigation, teal connection panel,
+  one server/public-IP row, fixed health tiles and equal download/upload/session cards.
+- Keep full-width traffic bars from actual statistics. Switch to the measured
+  DNS + TCP latency history without crowding the dashboard; failed probes leave gaps.
+- Refine every page with consistent navy/teal colors, readable controls and native
+  focus/hover states. All existing pages, configuration fields and actions remain.
+- Android phone and TV 1.0.5 introduce a clearer connection action, grouped server
+  controls, fixed metric cards, compact phone menu and visible TV focus states.
+  System-bar/cutout spacing, Allow insecure editing and stored profiles are retained.
+- Desktop and Android networking/core implementations are unchanged in this UI release.
 
-Includes the latest signed Android phone and TV 1.0.4 APKs, unchanged from 2.1.3:
-DNS-over-TCP through VMess fixes the reproduced separate-app DNS failure, with real
-transfer rates and recovery-safe totals. Both flavors passed the controlled
-separate-UID 2 MiB download fixture and TLS fallback regression. Physical-device
-behavior and the user's server are not inferred from those controlled tests.
+Includes Linux portable/archive, AppImage, DEB, RPM, Arch binary package, Windows
+portable/installer and signed Android phone/TV APKs. Android retains its application
+IDs and signing identity for upgrades. The Linux install/update command selects
+Latest and preserves existing profiles.
 
-The Linux update command continues to select the Latest release. Existing profiles
-and application signing identities are retained.
+Native UI rendering and emulator checks cover presentation and interaction;
+physical phone/TV networks and the user's server are not inferred from those tests.

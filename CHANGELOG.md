@@ -1,3 +1,13 @@
+# 2.1.5 — compact desktop and arranged Android/TV screens
+
+- Restore the earlier desktop overview hierarchy with restrained teal/navy styling.
+- Keep fixed-size health/metric cards, full-width traffic bars and a latency chart switch.
+- Retain native single-click/keyboard navigation, scrolling, configuration and callbacks.
+- Group Android/TV connection, server, import and settings controls; add consistent
+  focus states, a compact notch-safe menu and readable metric cards.
+- Bump Android to 1.0.5 (versionCode 6), preserving signing and profile storage.
+- No networking/core changes in either platform.
+
 # 2.1.4 — stable dashboard cards and measured latency history
 
 - Restore paired download/upload bars using actual traffic statistics.

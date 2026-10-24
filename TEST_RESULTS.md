@@ -1,3 +1,22 @@
+# 2.1.5 interface validation — 2026-10-24
+
+- Native Slint rendering covers six pages at 1366×768, 1536×1024, 1920×1080,
+  980×720 and 800×600. The compact overview fits its quick actions at 1366×768.
+- Pointer/keyboard regressions passed at 100% and 150% scale: fixed metric/health
+  geometry under changing values, real-sample traffic bars/toggle, latency-tab
+  trace rendering, Connect/Disconnect/Cancel, Verify, IP refresh, server selection,
+  six first-click sidebar actions, Space/Enter, Ctrl+K, five normal/compact server
+  rows, dashboard scrolling and editor scrolling with a fixed footer.
+- All 130 Rust library tests passed locally. CI runs the broader cross-platform
+  gates before publishing. Existing unrelated formatting warnings are retained;
+  the changed Rust preview harness passes rustfmt.
+- Signed Android phone/TV 1.0.5 builds: 33 JVM tests per flavor, zero lint errors.
+  See android/TEST_RESULTS.md for emulator and signing checks.
+- No src/ networking/core modules or Android service/profile-store implementation
+  changed. No real server credentials or user profiles were used in tests.
+
+## Earlier validation
+
 # 2.1.4 validation
 
 Local checks cover the real native UI at 100%/150% scaling, equal/stable metric

@@ -19,20 +19,26 @@ import java.util.*;
 
 public final class MainActivity extends Activity {
     private static final String[] PAGES={"Overview","Servers","SNI profiles","Activity","Settings","Diagnostics"};
-    private static final int INK=0xffe7edf8,MUTED=0xff9fb1c9,ACCENT=0xff66d5cc;
+    private static final int INK=0xffe9f0f6,MUTED=0xff9aafbe,ACCENT=0xff79cec5,BG=0xff0c121a,PANEL=0xff151f29;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private final Map<String,Long> latencies=new HashMap<>();
     private ProfileStore store;private AppSettings settings;private List<Profile> profiles=new ArrayList<>();
     private LinearLayout root,content,sidebar,serverList,topBar;private ScrollView scroll;
-    private TextView state,traffic,activityLog,feedback;private EditText importBox,search;
+    private TextView state,traffic,activityLog,feedback,heroTitle,serverTitle,downloadValue,uploadValue,sessionValue,latencyValue,downloadTotal,uploadTotal;
+    private Button connectAction;private EditText importBox,search;
     private boolean tv,readable=true,sortLatency;private int page;private String query="";
     private final Runnable tick=new Runnable(){public void run(){refreshStatus();handler.postDelayed(this,1000);}};
     @Override public void onCreate(Bundle saved){
         super.onCreate(saved);store=new ProfileStore(this);settings=new AppSettings(this);
         tv=BuildConfig.FLAVOR.equals("tv")||getSystemService(UiModeManager.class).getCurrentModeType()==Configuration.UI_MODE_TYPE_TELEVISION;
         page=saved==null?0:saved.getInt("page",0);load();
-        root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(0xff0c111a);
-        if(!tv){topBar=new LinearLayout(this);topBar.setPadding(dp(12),dp(8),dp(12),dp(4));button(topBar,"☰  SNI TUNNEL",v->drawer());root.addView(topBar);}
+        root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(BG);
+        if(!tv){
+            topBar=new LinearLayout(this);topBar.setGravity(Gravity.CENTER_VERTICAL);topBar.setPadding(dp(12),dp(8),dp(18),dp(6));
+            Button menu=button(topBar,"☰",v->drawer());menu.setContentDescription("Open navigation menu");menu.setLayoutParams(new LinearLayout.LayoutParams(dp(48),dp(44)));
+            TextView brand=label(topBar,"SNI TUNNEL",14,INK);brand.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));brand.setPadding(dp(12),0,0,0);
+            root.addView(topBar);
+        }
         root.setOnApplyWindowInsetsListener((view,insets)->{
             int left,top,right,bottom;
             if(Build.VERSION.SDK_INT>=30){android.graphics.Insets safe=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout()|WindowInsets.Type.ime());left=safe.left;top=safe.top;right=safe.right;bottom=safe.bottom;}
@@ -40,9 +46,9 @@ public final class MainActivity extends Activity {
             view.setPadding(left,top,right,bottom);return insets;
         });
         LinearLayout body=new LinearLayout(this);root.addView(body,new LinearLayout.LayoutParams(-1,0,1));
-        if(tv){sidebar=new LinearLayout(this);sidebar.setOrientation(LinearLayout.VERTICAL);sidebar.setPadding(dp(14),dp(28),dp(14),dp(20));sidebar.setBackgroundColor(0xff101821);ScrollView navigation=new ScrollView(this);navigation.setFillViewport(true);navigation.addView(sidebar);body.addView(navigation,new LinearLayout.LayoutParams(dp(170),-1));}
+        if(tv){sidebar=new LinearLayout(this);sidebar.setOrientation(LinearLayout.VERTICAL);sidebar.setPadding(dp(14),dp(28),dp(14),dp(20));sidebar.setBackgroundColor(0xff101821);ScrollView navigation=new ScrollView(this);navigation.setFillViewport(true);navigation.addView(sidebar);body.addView(navigation,new LinearLayout.LayoutParams(dp(190),-1));}
         scroll=new ScrollView(this);scroll.setFillViewport(true);body.addView(scroll,new LinearLayout.LayoutParams(0,-1,1));
-        content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(tv?28:20),dp(22),dp(tv?28:20),dp(30));scroll.addView(content);
+        content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(tv?28:18),dp(tv?20:8),dp(tv?28:18),dp(24));scroll.addView(content);
         setContentView(root);root.requestApplyInsets();render();
         if(Build.VERSION.SDK_INT>=33&&checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},20);
     }
@@ -53,37 +59,64 @@ public final class MainActivity extends Activity {
         LinearLayout menu=new LinearLayout(this);menu.setOrientation(LinearLayout.VERTICAL);menu.setPadding(dp(12),dp(22),dp(12),dp(22));menu.setBackgroundColor(0xff101821);
         PopupWindow window=new PopupWindow(menu,dp(240),-2,true);window.setBackgroundDrawable(shape(0xff101821,0xff2b3948));window.setElevation(dp(12));
         label(menu,"SNI TUNNEL",20,ACCENT);
-        for(int n=0;n<PAGES.length;n++){final int dest=n;button(menu,(n==page?"●  ":"    ")+PAGES[n],v->{window.dismiss();navigate(dest);});}
+        for(int n=0;n<PAGES.length;n++){final int dest=n;Button nav=button(menu,PAGES[n],v->{window.dismiss();navigate(dest);});nav.setSelected(n==page);nav.setGravity(Gravity.CENTER_VERTICAL|Gravity.START);}
         window.showAsDropDown(topBar,0,0,Gravity.START);
     }
     private void navigate(int target){page=target;render();scroll.post(()->scroll.scrollTo(0,0));}
     private void render(){
-        state=null;traffic=null;activityLog=null;feedback=null;content.removeAllViews();
-        if(sidebar!=null){sidebar.removeAllViews();label(sidebar,"SNI TUNNEL",19,ACCENT);label(sidebar,"ANDROID / TV",11,MUTED);for(int n=0;n<PAGES.length;n++){final int dest=n;button(sidebar,(n==page?"●  ":"")+PAGES[n],v->navigate(dest));}}
-        label(content,PAGES[page],tv?28:26,INK).setTypeface(null,Typeface.BOLD);
-        label(content,"Your connection. Your configuration.",14,MUTED);space(content,14);
+        state=null;traffic=null;activityLog=null;feedback=null;heroTitle=null;serverTitle=null;downloadValue=null;uploadValue=null;sessionValue=null;latencyValue=null;downloadTotal=null;uploadTotal=null;connectAction=null;content.removeAllViews();
+        if(sidebar!=null){sidebar.removeAllViews();label(sidebar,"SNI TUNNEL",19,ACCENT);label(sidebar,"ANDROID / TV",11,MUTED);for(int n=0;n<PAGES.length;n++){final int dest=n;Button nav=button(sidebar,PAGES[n],v->navigate(dest));nav.setSelected(n==page);nav.setGravity(Gravity.CENTER_VERTICAL|Gravity.START);}}
+        label(content,page==0?"Connection overview":PAGES[page],tv?27:24,INK).setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
+        label(content,page==0?"Your connection. Your configuration.":page==1?"Choose and manage your servers":page==2?"Independent TLS server names":page==3?"Connection events and details":page==4?"Connection preferences":"Inspect your connection",13,MUTED);space(content,10);
         switch(page){case 0:overview();break;case 1:servers();break;case 2:sniProfiles();break;case 3:activity();break;case 4:preferences();break;case 5:diagnostics();break;}
         refreshStatus();
+        if(tv){View first=firstFocusable(content);if(first!=null)first.post(first::requestFocus);}
     }
+    private View firstFocusable(View view){if(view.isFocusable())return view;if(view instanceof android.view.ViewGroup){android.view.ViewGroup group=(android.view.ViewGroup)view;for(int i=0;i<group.getChildCount();i++){View found=firstFocusable(group.getChildAt(i));if(found!=null)return found;}}return null;}
+    @Override public void onBackPressed(){if(page!=0)navigate(0);else super.onBackPressed();}
     private void overview(){
-        state=label(content,TunnelService.status,21,ACCENT);state.setPadding(dp(16),dp(18),dp(16),dp(18));state.setBackground(shape(0xff182b34,0xff31515b));
-        label(content,"Verification before success",13,MUTED);space(content,12);
-        label(content,TunnelService.active?TunnelService.serverName:selectedName(),18,INK);
-        traffic=label(content,"",16,MUTED);space(content,12);
-        LinearLayout actions=row(content);button(actions,"Connect",v->prepare(false));button(actions,"Disconnect",v->stop());
-        LinearLayout actions2=row(content);button(actions2,"Reconnect",v->prepare(true));button(actions2,"Verify now",v->verify());
-        button(content,"Switch server",v->navigate(1));
-        button(content,"Choose SNI profile",v->navigate(2));
-        feedback=label(content,"",14,MUTED);
-        label(content,"TUN · whole device, except this app/core UID\nAndroid's VPN permission is required. Proxy HTTPS and tunneled DNS are checked independently. Transfer rates below measure packets handled by the VPN, not the proxy probe.",12,MUTED);
+        LinearLayout hero=card(content);hero.setBackground(shape(0xff193237,0xff34535b));
+        label(hero,"YOUR CONNECTION",10,ACCENT).setLetterSpacing(0.08f);
+        LinearLayout heroBody=tv?row(hero):hero;
+        LinearLayout words=new LinearLayout(this);words.setOrientation(LinearLayout.VERTICAL);
+        heroBody.addView(words,new LinearLayout.LayoutParams(tv?0:-1,-2,tv?1:0));
+        heroTitle=label(words,"A clearer connection.",tv?27:24,INK);heroTitle.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
+        state=label(words,TunnelService.status,13,MUTED);state.setMaxLines(4);state.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        connectAction=button(heroBody,"Connect",v->{if(TunnelService.active)stop();else prepare(false);});
+        connectAction.setBackground(primaryFocus());if(tv)connectAction.setLayoutParams(new LinearLayout.LayoutParams(dp(170),dp(52)));
+        LinearLayout server=card(content);label(server,"ACTIVE SERVER",10,MUTED).setLetterSpacing(0.06f);
+        serverTitle=label(server,TunnelService.active?TunnelService.serverName:selectedName(),17,INK);serverTitle.setSingleLine(true);serverTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        LinearLayout selection=row(server);button(selection,"Switch server",v->navigate(1));button(selection,"SNI profiles",v->navigate(2));
+        LinearLayout metrics=row(content);
+        TextView[] down=metric(metrics,"DOWNLOAD","0 B/s");downloadValue=down[0];downloadTotal=down[1];
+        TextView[] up=metric(metrics,"UPLOAD","0 B/s");uploadValue=up[0];uploadTotal=up[1];
+        LinearLayout detailMetrics=tv?metrics:row(content);
+        TextView[] session=metric(detailMetrics,"SESSION","00:00");sessionValue=session[0];session[1].setText("Since connection");
+        TextView[] latency=metric(detailMetrics,"HTTPS LATENCY","Not measured");latencyValue=latency[0];latency[1].setText("Measured through proxy");
+        LinearLayout health=card(content);label(health,"CONNECTION ACTIONS",10,MUTED).setLetterSpacing(0.06f);
+        LinearLayout actions=row(health);button(actions,"Verify now",v->verify());button(actions,"Reconnect",v->prepare(true));
+        button(health,"Connection details",v->navigate(5));
+        feedback=label(content,"",13,ACCENT);
+        label(content,"Whole-device VPN · app/core UID excluded. Proxy HTTPS and DNS are verified; see Diagnostics for coverage.",11,MUTED);
+    }
+    private TextView[] metric(LinearLayout parent,String title,String initial){
+        LinearLayout tile=new LinearLayout(this);tile.setOrientation(LinearLayout.VERTICAL);tile.setPadding(dp(12),dp(10),dp(12),dp(10));tile.setBackground(shape(PANEL,0xff283844));
+        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(0,dp(tv?100:96),1);params.setMargins(dp(3),dp(5),dp(3),dp(5));parent.addView(tile,params);
+        TextView heading=label(tile,title,10,MUTED);heading.setSingleLine(true);heading.setLetterSpacing(0.04f);
+        TextView value=label(tile,initial,tv?22:20,INK);value.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));value.setSingleLine(true);value.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        TextView detail=label(tile,"",10,MUTED);detail.setSingleLine(true);detail.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        heading.setPadding(0,dp(2),0,dp(2));value.setPadding(0,dp(3),0,dp(3));detail.setPadding(0,dp(2),0,dp(2));
+        return new TextView[]{value,detail};
     }
     private void servers(){
-        LinearLayout add=row(content);button(add,"+ Add server",v->edit(null));button(add,"Clipboard",v->clipboard());
-        importBox=input(content,"Paste server links (one per line) or VMess JSON",true);importBox.setMinLines(2);importBox.setMaxLines(4);
-        LinearLayout imports=row(content);button(imports,"Import",v->importText(importBox.getText().toString()));button(imports,"Import file",v->file());
-        feedback=label(content,profiles.size()+" saved · imports create new profiles",13,ACCENT);
+        LinearLayout importCard=card(content);
+        LinearLayout add=row(importCard);button(add,"+ Add server",v->edit(null));button(add,"Clipboard",v->clipboard());
+        label(importCard,"IMPORT SERVER PROFILES",10,MUTED).setLetterSpacing(0.06f);
+        importBox=input(importCard,"Paste server links or VMess JSON",true);importBox.setMinLines(2);importBox.setMaxLines(4);
+        LinearLayout imports=row(importCard);button(imports,"Import",v->importText(importBox.getText().toString())).setBackground(primaryFocus());button(imports,"Import file",v->file());
+        feedback=label(content,profiles.size()+" saved · imports always add new profiles",12,ACCENT);
         search=input(content,"Search servers, address or SNI",false);search.setText(query);
-        Spinner sort=spinner(content,new String[]{"Name","Latency"});sort.setSelection(sortLatency?1:0);sort.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onItemSelected(AdapterView<?> p,View v,int n,long id){sortLatency=n==1;serverRows();}public void onNothingSelected(AdapterView<?> p){}});
+        Spinner sort=spinner(content,new String[]{"Sort by name","Sort by latency"});sort.setSelection(sortLatency?1:0);sort.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onItemSelected(AdapterView<?> p,View v,int n,long id){sortLatency=n==1;serverRows();}public void onNothingSelected(AdapterView<?> p){}});
         serverList=new LinearLayout(this);serverList.setOrientation(LinearLayout.VERTICAL);content.addView(serverList);
         search.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int f){}public void onTextChanged(CharSequence s,int a,int b,int c){query=s.toString();serverRows();}public void afterTextChanged(Editable e){}});serverRows();
     }
@@ -92,7 +125,7 @@ public final class MainActivity extends Activity {
         for(Profile p:profiles)if((p.name()+" "+p.value.optString("add")+" "+p.value.optString("sni")).toLowerCase(Locale.ROOT).contains(query.toLowerCase(Locale.ROOT)))shown.add(p);
         shown.sort((a,b)->sortLatency?Long.compare(latencies.getOrDefault(a.id(),Long.MAX_VALUE),latencies.getOrDefault(b.id(),Long.MAX_VALUE)):a.name().compareToIgnoreCase(b.name()));
         for(Profile p:shown){
-            LinearLayout card=card(serverList);label(card,(p.id().equals(store.selected())?"●  ":"")+p.name(),17,INK);
+            LinearLayout card=card(serverList);if(p.id().equals(store.selected())){card.setBackground(shape(0xff193039,0xff416771));label(card,"SELECTED",10,ACCENT);}label(card,p.name(),16,INK);
             label(card,p.value.optString("add")+":"+p.value.optInt("port")+"  ·  "+p.value.optString("net","tcp")+" / "+p.value.optString("tls","none"),12,MUTED);
             label(card,"SNI: "+p.value.optString("sni","default")+(latencies.containsKey(p.id())?"  ·  TCP "+latencies.get(p.id())+" ms":""),12,MUTED);
             LinearLayout a=row(card);button(a,"Use",v->{store.select(p.id());serverRows();message("Server selected. Connect or Reconnect from Overview.");});button(a,"Edit",v->edit(p));button(a,"Test",v->test(p));
@@ -129,8 +162,9 @@ public final class MainActivity extends Activity {
     }
     private void sniProfiles(){
         label(content,"SNI profiles override TLS SNI independently of the server address and WebSocket Host.",14,MUTED);
-        button(content,"Use server's original SNI",v->{settings.prefs.edit().remove("selectedSni").apply();render();});
-        button(content,"+ Add SNI profile",v->editSni(null));
+        LinearLayout sniActions=row(content);
+        button(sniActions,"Original SNI",v->{settings.prefs.edit().remove("selectedSni").apply();render();});
+        button(sniActions,"+ Add profile",v->editSni(null));
         JSONArray list=settings.sniProfiles();for(int n=0;n<list.length();n++){JSONObject p=list.optJSONObject(n);if(p==null)continue;
             LinearLayout card=card(content);label(card,(p.optString("id").equals(settings.prefs.getString("selectedSni",""))?"●  ":"")+p.optString("name"),17,INK);label(card,p.optString("sni"),14,MUTED);
             LinearLayout actions=row(card);button(actions,"Use",v->{settings.prefs.edit().putString("selectedSni",p.optString("id")).apply();render();});button(actions,"Edit",v->editSni(p));button(actions,"Delete",v->{try{JSONArray next=new JSONArray();for(int j=0;j<list.length();j++)if(!list.getJSONObject(j).optString("id").equals(p.optString("id")))next.put(list.getJSONObject(j));settings.saveSni(next);render();}catch(Exception e){message("Could not save SNI profiles.");}});
@@ -147,25 +181,36 @@ public final class MainActivity extends Activity {
     }
     private void activity(){
         LinearLayout actions=row(content);button(actions,"Copy logs",v->{getSystemService(ClipboardManager.class).setPrimaryClip(ClipData.newPlainText("SNI Tunnel events",Events.text()));message("Redacted events copied.");});button(actions,"Clear",v->{Events.clear();refreshStatus();});
-        activityLog=label(content,Events.text(),12,MUTED);activityLog.setTypeface(Typeface.MONOSPACE);activityLog.setTextIsSelectable(true);feedback=label(content,"UUIDs and server links are hidden from these events.",12,MUTED);
+        LinearLayout logCard=card(content);activityLog=label(logCard,Events.text(),12,MUTED);activityLog.setTypeface(Typeface.MONOSPACE);activityLog.setTextIsSelectable(true);feedback=label(content,"UUIDs and server links are hidden from these events.",12,MUTED);
     }
     private void preferences(){
-        CheckBox health=check(content,"Automatic health checks",settings.health());CheckBox recovery=check(content,"Automatic reconnect (bounded attempts)",settings.reconnect());
-        EditText interval=field(content,"Health interval (15–3600 seconds)",String.valueOf(settings.interval()));interval.setInputType(2);
-        EditText timeout=field(content,"Probe timeout (3–30 seconds)",String.valueOf(settings.timeout()));timeout.setInputType(2);
-        button(content,"Save settings",v->{try{int seconds=Integer.parseInt(interval.getText().toString()),limit=Integer.parseInt(timeout.getText().toString());if(seconds<15||seconds>3600||limit<3||limit>30)throw new Exception();settings.prefs.edit().putBoolean("health",health.isChecked()).putBoolean("reconnect",recovery.isChecked()).putInt("interval",seconds).putInt("timeout",limit).apply();message("Settings saved.");}catch(Exception e){message("Enter interval 15–3600 and timeout 3–30.");}});
+        LinearLayout preferences=card(content);label(preferences,"HEALTH & RECOVERY",10,ACCENT);
+        CheckBox health=check(preferences,"Automatic health checks",settings.health());CheckBox recovery=check(preferences,"Automatic reconnect (bounded attempts)",settings.reconnect());
+        EditText interval=field(preferences,"Health interval (15–3600 seconds)",String.valueOf(settings.interval()));interval.setInputType(2);
+        EditText timeout=field(preferences,"Probe timeout (3–30 seconds)",String.valueOf(settings.timeout()));timeout.setInputType(2);
+        button(preferences,"Save settings",v->{try{int seconds=Integer.parseInt(interval.getText().toString()),limit=Integer.parseInt(timeout.getText().toString());if(seconds<15||seconds>3600||limit<3||limit>30)throw new Exception();settings.prefs.edit().putBoolean("health",health.isChecked()).putBoolean("reconnect",recovery.isChecked()).putInt("interval",seconds).putInt("timeout",limit).apply();message("Settings saved.");}catch(Exception e){message("Enter interval 15–3600 and timeout 3–30.");}});
         label(content,"Version " + BuildConfig.VERSION_NAME,12,MUTED);
         label(content,"TUN routes the whole device except this app/core UID. Android's VPN dialog controls permission. A failed startup leaves ordinary connectivity available; bounded recovery retains an established VPN. Android always-on/lockdown is not provided.",13,MUTED);
         feedback=label(content,"",14,ACCENT);
     }
     private void diagnostics(){
-        state=label(content,TunnelService.status,18,ACCENT);traffic=label(content,"",14,MUTED);
+        LinearLayout summary=card(content);label(summary,"LIVE CONNECTION",10,ACCENT);state=label(summary,TunnelService.status,15,INK);traffic=label(summary,"",13,MUTED);
         button(content,"Test selected server TCP",v->{try{test(settings.apply(store.current()));}catch(Exception e){message("Select a server first.");}});
         button(content,"Verify active tunnel",v->verify());button(content,"Reconnect now",v->prepare(true));button(content,"Open Activity",v->navigate(3));
         label(content,"If TLS fails with a custom SNI, check the certificate verification name or a trusted leaf certificate pin in Servers → Edit. Proxy verification requires HTTPS plus a tunneled DNS answer. It does not certify every app route. Activity separates TLS, DNS and packet-forwarder failures.",13,MUTED);
         feedback=label(content,"",14,MUTED);
     }
     private void refreshStatus(){
+        if(heroTitle!=null)heroTitle.setText(TunnelService.verified?"You're connected.":TunnelService.active?"Connection in progress…":"A clearer connection.");
+        if(connectAction!=null)connectAction.setText(TunnelService.active?(TunnelService.verified?"Disconnect":"Cancel"):"Connect");
+        if(serverTitle!=null)serverTitle.setText(TunnelService.active?TunnelService.serverName:selectedName());
+        if(downloadValue!=null){
+            String down=bytes(TunnelService.downloadRate)+"/s",up=bytes(TunnelService.uploadRate)+"/s";
+            downloadValue.setText(down);downloadValue.setTooltipText(down);uploadValue.setText(up);uploadValue.setTooltipText(up);
+            downloadTotal.setText(bytes(TunnelService.downloaded)+" received");uploadTotal.setText(bytes(TunnelService.uploaded)+" sent");
+            long seconds=TunnelService.connectedAt==0?0:Math.max(0,(System.currentTimeMillis()-TunnelService.connectedAt)/1000);
+            sessionValue.setText(String.format(Locale.US,"%02d:%02d",seconds/60,seconds%60));latencyValue.setText(TunnelService.latency<0?"Not measured":TunnelService.latency+" ms");
+        }
         if(state!=null){state.setText(TunnelService.status);state.setTextColor(TunnelService.verified?ACCENT:TunnelService.active?0xfff3c675:MUTED);}
         if(traffic!=null){long elapsed=TunnelService.connectedAt==0?0:(System.currentTimeMillis()-TunnelService.connectedAt)/1000;traffic.setText("HTTPS latency: "+(TunnelService.latency<0?"not measured":TunnelService.latency+" ms")+"\nDownload: "+bytes(TunnelService.downloadRate)+"/s  ·  Upload: "+bytes(TunnelService.uploadRate)+"/s\nReceived: "+bytes(TunnelService.downloaded)+"  ·  Sent: "+bytes(TunnelService.uploaded)+"\nSession: "+String.format(Locale.US,"%02d:%02d",elapsed/60,elapsed%60));}
         if(activityLog!=null){String value=Events.text();if(!activityLog.getText().toString().equals(value))activityLog.setText(value);}
@@ -188,14 +233,22 @@ public final class MainActivity extends Activity {
     private int dp(int value){return Math.round(value*getResources().getDisplayMetrics().density);}
     private TextView label(LinearLayout parent,String value,int size,int color){TextView v=new TextView(this);v.setText(value);v.setTextSize(size);v.setTextColor(color);v.setPadding(0,dp(5),0,dp(5));parent.addView(v);return v;}
     private EditText field(LinearLayout parent,String title,String value){label(parent,title,12,MUTED);EditText v=input(parent,title,false);v.setText(value);return v;}
-    private EditText input(LinearLayout parent,String hint,boolean multi){EditText v=new EditText(this);v.setHint(hint);v.setTextColor(INK);v.setHintTextColor(MUTED);v.setTextSize(14);v.setPadding(dp(12),dp(12),dp(12),dp(12));v.setBackground(focus());v.setSingleLine(!multi);v.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS|(multi?android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE:0));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.setMargins(0,dp(5),0,dp(8));parent.addView(v,p);return v;}
-    private CheckBox check(LinearLayout parent,String title,boolean value){CheckBox v=new CheckBox(this);v.setText(title);v.setTextColor(INK);v.setChecked(value);v.setMinHeight(dp(48));parent.addView(v);return v;}
-    private Spinner spinner(LinearLayout parent,String[] values){Spinner v=new Spinner(this);ArrayAdapter<String> a=new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,values);a.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);v.setAdapter(a);v.setMinimumHeight(dp(48));parent.addView(v);return v;}
+    private EditText input(LinearLayout parent,String hint,boolean multi){EditText v=new EditText(this);v.setHint(hint);v.setTextColor(INK);v.setHintTextColor(MUTED);v.setTextSize(14);v.setId(View.generateViewId());v.setPadding(dp(12),dp(12),dp(12),dp(12));v.setBackground(focus());v.setSingleLine(!multi);v.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS|(multi?android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE:0));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.setMargins(0,dp(5),0,dp(8));parent.addView(v,p);return v;}
+    private CheckBox check(LinearLayout parent,String title,boolean value){CheckBox v=new CheckBox(this);v.setText(title);v.setTextColor(INK);v.setChecked(value);v.setMinHeight(dp(48));v.setButtonTintList(android.content.res.ColorStateList.valueOf(ACCENT));v.setId(View.generateViewId());parent.addView(v);return v;}
+    private Spinner spinner(LinearLayout parent,String[] values){Spinner v=new Spinner(this);ArrayAdapter<String> a=new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,values);a.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);v.setAdapter(a);v.setMinimumHeight(dp(48));v.setBackground(focus());v.setId(View.generateViewId());parent.addView(v);return v;}
     private LinearLayout row(LinearLayout parent){LinearLayout v=new LinearLayout(this);parent.addView(v);return v;}
-    private LinearLayout card(LinearLayout parent){LinearLayout v=new LinearLayout(this);v.setOrientation(LinearLayout.VERTICAL);v.setPadding(dp(12),dp(10),dp(12),dp(10));v.setBackground(shape(0xff16212d,0xff253647));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.setMargins(0,dp(6),0,dp(8));parent.addView(v,p);return v;}
-    private void button(LinearLayout parent,String text,View.OnClickListener action){Button v=new Button(this);v.setText(text);v.setTextSize(tv?15:13);v.setAllCaps(false);v.setTextColor(INK);v.setBackground(focus());v.setMinHeight(dp(48));v.setFocusable(true);v.setOnClickListener(action);boolean vertical=parent.getOrientation()==LinearLayout.VERTICAL;LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(vertical?-1:0,-2,vertical?0:1);p.setMargins(dp(3),dp(5),dp(3),dp(5));parent.addView(v,p);}
-    private GradientDrawable shape(int color,int border){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(10));d.setStroke(dp(2),border);return d;}
-    private StateListDrawable focus(){StateListDrawable d=new StateListDrawable();d.addState(new int[]{android.R.attr.state_focused},shape(0xff244b58,ACCENT));d.addState(new int[]{android.R.attr.state_pressed},shape(0xff244b58,ACCENT));d.addState(new int[]{},shape(0xff18232f,0xff2b3948));return d;}
+    private LinearLayout card(LinearLayout parent){LinearLayout v=new LinearLayout(this);v.setOrientation(LinearLayout.VERTICAL);v.setPadding(dp(14),dp(12),dp(14),dp(12));v.setBackground(shape(PANEL,0xff283844));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.setMargins(0,dp(6),0,dp(8));parent.addView(v,p);return v;}
+    private Button button(LinearLayout parent,String text,View.OnClickListener action){
+        Button v=new Button(this);v.setId(View.generateViewId());v.setText(text);v.setTextSize(tv?14:13);v.setAllCaps(false);v.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));v.setTextColor(INK);
+        v.setStateListAnimator(null);v.setBackground(focus());v.setPadding(dp(12),dp(8),dp(12),dp(8));v.setMinWidth(0);v.setMinimumWidth(0);v.setMinHeight(dp(48));v.setSingleLine(true);v.setEllipsize(android.text.TextUtils.TruncateAt.END);v.setFocusable(true);v.setOnClickListener(action);
+        boolean vertical=parent.getOrientation()==LinearLayout.VERTICAL;LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(vertical?-1:0,-2,vertical?0:1);p.setMargins(dp(3),dp(4),dp(3),dp(4));parent.addView(v,p);return v;
+    }
+    private GradientDrawable shape(int color,int border){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(12));d.setStroke(dp(1),border);return d;}
+    private StateListDrawable focus(){
+        StateListDrawable d=new StateListDrawable();GradientDrawable focused=shape(0xff264650,ACCENT);focused.setStroke(dp(2),ACCENT);
+        d.addState(new int[]{android.R.attr.state_focused},focused);d.addState(new int[]{android.R.attr.state_pressed},shape(0xff264650,ACCENT));d.addState(new int[]{android.R.attr.state_selected},shape(0xff203b46,0xff416771));d.addState(new int[]{},shape(0xff1b2934,0xff2b3d48));return d;
+    }
+    private StateListDrawable primaryFocus(){StateListDrawable d=new StateListDrawable();GradientDrawable focused=shape(0xff326c71,0xffa3e5df);focused.setStroke(dp(2),0xffa3e5df);d.addState(new int[]{android.R.attr.state_focused},focused);d.addState(new int[]{android.R.attr.state_pressed},shape(0xff234d53,ACCENT));d.addState(new int[]{},shape(0xff295d63,0xff5a9d9f));return d;}
     private void space(LinearLayout parent,int height){parent.addView(new View(this),new LinearLayout.LayoutParams(1,dp(height)));}
     private static String bytes(long n){return n<1024?n+" B":n<1048576?String.format(Locale.US,"%.1f KB",n/1024.0):String.format(Locale.US,"%.1f MB",n/1048576.0);}
 }

@@ -4,17 +4,17 @@ export global Preferences {
     in-out property <bool> compact-layout: false;
 }
 export global Theme {
-    out property <color> bg: #0e141c;
-    out property <color> sidebar: #141c26;
-    out property <color> panel: #171f2a;
-    out property <color> panel-hi: #203650;
-    out property <color> border: #293747;
-    out property <color> text: #f0f4fc;
-    out property <color> muted: #a2b6cf;
-    out property <color> icon: #99b5df;
-    out property <color> accent: #3e9bff;
-    out property <color> upload: #a069ff;
-    out property <color> success: #2ad7a0;
+    out property <color> bg: #0c121a;
+    out property <color> sidebar: #101922;
+    out property <color> panel: #151f29;
+    out property <color> panel-hi: #223d46;
+    out property <color> border: #283844;
+    out property <color> text: #e9f0f6;
+    out property <color> muted: #9aafbe;
+    out property <color> icon: #95b3c8;
+    out property <color> accent: #79cec5;
+    out property <color> upload: #82a9dc;
+    out property <color> success: #79d5b7;
     out property <color> warn: #edba6a;
     out property <color> error: #ff6275;
     out property <length> radius: 9px;
@@ -42,8 +42,8 @@ export component ActionButton inherits Rectangle {
     vertical-stretch: 0;
     border-radius: 6px;
     border-width: 1px;
-    border-color: focus.has-focus ? #9bcaff : root.primary ? #4b9eff : Theme.border;
-    background: root.primary ? (hit.pressed ? #176ad2 : hit.has-hover ? #409aff : #2485fa) : hit.pressed ? #263c55 : hit.has-hover || root.checked ? #26354a : #202a37;
+    border-color: focus.has-focus ? #a3e5df : root.primary ? #5a9d9f : Theme.border;
+    background: root.primary ? (hit.pressed ? #234d53 : hit.has-hover ? #326c71 : #295d63) : hit.pressed ? #25404b : hit.has-hover || root.checked ? #243640 : #1d2b36;
     opacity: root.enabled ? 1 : 0.45;
     animate background { duration: Preferences.reduced-motion ? 0ms : 100ms; }
     forward-focus: focus;
@@ -75,18 +75,18 @@ export component RailItem inherits Rectangle {
     in property <image> icon;
     in property <bool> selected;
     callback clicked();
-    height: 48px; vertical-stretch: 0;
+    height: 42px; vertical-stretch: 0;
     border-radius: 8px;
-    background: root.selected ? #1e3657 : hit.has-hover ? #1e2b3c : transparent;
+    background: root.selected ? #203b46 : hit.has-hover ? #192c37 : transparent;
     border-width: 1px;
-    border-color: focus.has-focus ? Theme.accent : transparent;
+    border-color: focus.has-focus ? Theme.accent : root.selected ? #416771 : transparent;
     animate background { duration: Preferences.reduced-motion ? 0ms : 100ms; }
     forward-focus: focus;
     accessible-role: button; accessible-label: root.label;
     accessible-action-default => { root.clicked(); }
-    Rectangle { x: 0px; y: 13px; height: 22px; width: 3px; border-radius: 1.5px; background: root.selected ? Theme.accent : transparent; }
-    Image { x: 18px; y: 13px; width: 22px; height: 22px; source: root.icon; colorize: root.selected ? #63b2ff : Theme.icon; }
-    Text { x: 58px; width: parent.width - 66px; height: parent.height; text: root.label; color: root.selected ? Theme.text : Theme.muted; font-size: 14px; vertical-alignment: center; }
+    Rectangle { x: parent.width - 4px; y: 10px; height: 22px; width: 3px; border-radius: 1.5px; background: root.selected ? Theme.accent : transparent; }
+    Image { x: 12px; y: 11px; width: 20px; height: 20px; source: root.icon; colorize: root.selected ? #8cdbd4 : Theme.icon; }
+    Text { x: 42px; width: parent.width - 49px; height: parent.height; text: root.label; color: root.selected ? Theme.text : Theme.muted; font-size: 12px; vertical-alignment: center; }
     hit := TouchArea { mouse-cursor: pointer; clicked => { focus.focus(); root.clicked(); } }
     focus := FocusScope {
         width: 0px; height: 0px; focus-on-click: false;
@@ -96,11 +96,11 @@ export component RailItem inherits Rectangle {
 export component StatusChip inherits Rectangle {
     in property <string> text;
     in property <color> indicator: Theme.muted;
-    border-radius: 6px; border-width: 1px; border-color: Theme.border; background: #1d2938;
+    border-radius: 6px; border-width: 1px; border-color: Theme.border; background: #1b2c36;
     in property <length> reserved-width: 132px;
     width: root.reserved-width; horizontal-stretch: 0; min-height: 27px;
     HorizontalLayout { padding-left: 10px; padding-right: 10px; padding-top: 4px; padding-bottom: 4px; spacing: 7px;
-        Rectangle { width: 7px; height: 7px; border-radius: 4px; background: root.indicator; }
+        Rectangle { width: 7px; Rectangle { y: (parent.height - self.height)/2; width: 7px; height: 7px; border-radius: 4px; background: root.indicator; } }
         Text { text: root.text; color: Theme.muted; font-size: 11px; min-width: 0px; preferred-width: 0px; horizontal-stretch: 1; overflow: elide; vertical-alignment: center; }
     }
     Tooltip { text: @markdown("\{root.text}"); }
@@ -111,7 +111,7 @@ export component HealthTile inherits Rectangle {
     in property <image> icon;
     in property <int> state: 0;
     in property <bool> compact: false;
-    border-radius: 7px; border-width: 1px; border-color: #223040; background: #182330;
+    border-radius: 7px; border-width: 1px; border-color: #293c48; background: #182731;
     min-width: 0px; preferred-width: 0px; horizontal-stretch: 1; height: 54px;
     HorizontalLayout { padding: root.compact ? 7px : 10px; spacing: 8px;
         if !root.compact: Image { y: (parent.height - self.height)/2; source: root.icon; width: 25px; height: 25px; colorize: Theme.icon; }
@@ -145,17 +145,11 @@ export component MetricCard inherits Surface {
     in property <[PlotSegment]> line;
     in property <bool> show-sparkline: false;
     min-width: 0px; preferred-width: 0px; horizontal-stretch: 1;
-    height: 92px;
-    HorizontalLayout { padding: 12px; spacing: 12px;
-        Rectangle { y: (parent.height - self.height)/2; width: 40px; height: 44px; border-radius: 10px; background: root.tint.with-alpha(0.12);
-            Image { source: root.icon; width: 25px; height: 25px; x: (parent.width - self.width)/2; y: (parent.height - self.height)/2; colorize: root.tint; }
-        }
-        VerticalLayout { spacing: 5px; min-width: 0px; preferred-width: 0px; horizontal-stretch: 1;
-            Text { text: root.label; color: Theme.muted; font-size: 12px; }
-            Text { text: root.value; color: Theme.text; font-size: 23px; font-weight: 600; overflow: elide; }
-            Text { text: root.detail; color: Theme.muted; font-size: 11px; overflow: elide; }
-        }
-        if root.show-sparkline: Sparkline { data: root.line; line-color: root.tint; width: 100px; }
+    height: 88px;
+    VerticalLayout { padding: 12px; spacing: 5px;
+        Text { text: root.label; color: Theme.muted; font-size: 11px; letter-spacing: 0.5px; }
+        Text { text: root.value; color: Theme.text; font-size: 23px; font-weight: 600; overflow: elide; }
+        Text { text: root.detail; color: Theme.muted; font-size: 11px; overflow: elide; }
     }
     Tooltip { text: @markdown("\{root.label}: \{root.value} · \{root.detail}"); }
 }

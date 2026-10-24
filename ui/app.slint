@@ -74,6 +74,7 @@ export component AppWindow inherits Window {
     in-out property <bool> upload-visible: true;
     // Update density after a resize instead of feeding window layout hints back
     // into their own geometry calculation.
+    private property <bool> latency-chart-selected: false;
     private property <bool> dense: true;
     changed height => { root.dense = root.compact-layout || root.height < 820px; }
     changed compact-layout => { root.dense = root.compact-layout || root.height < 820px; }
@@ -206,21 +207,21 @@ export component AppWindow inherits Window {
     keyboard-scope := FocusScope {
         width: parent.width; height: parent.height;
         key-pressed(event) => {
-            if event.modifiers.control && (event.text == "k" || event.text == "K") { global-search.focus(); return accept; }
+            if event.modifiers.control && (event.text == "k" || event.text == "K") { root.tab = 1; global-search.focus(); return accept; }
             return reject;
         }
     HorizontalLayout {
         spacing: 0px;
         Rectangle {
-            width: 236px;
-            background: @linear-gradient(105deg, #18202b 0%, #111923 100%);
+            width: 184px;
+            background: Theme.sidebar;
             border-width: 1px; border-color: #263344;
-            VerticalLayout { padding: 16px; spacing: 7px;
-                HorizontalLayout { spacing: 12px; padding-top: 12px; padding-bottom: 23px;
-                    Image { y: (parent.height - self.height)/2; source: @image-url("../assets/v2/brand.svg"); width: 40px; height: 40px; }
+            VerticalLayout { padding: 12px; spacing: 6px;
+                HorizontalLayout { spacing: 9px; padding-top: 12px; padding-bottom: 20px;
+                    Image { y: (parent.height - self.height)/2; source: @image-url("../assets/icon-64.png"); width: 30px; height: 30px; }
                     VerticalLayout { spacing: 7px;
-                        Text { text: "SNI Tunnel"; color: Theme.text; font-size: 16px; font-weight: 600; }
-                        Text { text: "Secure connection manager"; color: Theme.muted; font-size: 10px; }
+                        Text { text: "SNI TUNNEL"; color: Theme.text; font-size: 12px; font-weight: 600; }
+                        Text { text: "V2 / PREMIUM"; color: Theme.accent; font-size: 9px; letter-spacing: 1px; }
                     }
                 }
                 RailItem { label: "Overview"; icon: @image-url("../assets/v2/overview.svg"); selected: root.tab == 0; clicked => { root.tab = 0; } }
@@ -241,92 +242,50 @@ export component AppWindow inherits Window {
             }
         }
         VerticalLayout {
-            padding: root.dense ? 18px : 24px; spacing: root.dense ? 12px : 18px;
-            HorizontalLayout { spacing: 10px; height: 38px; vertical-stretch: 0;
-                global-search := SearchField { max-width: 620px; text <=> root.server-search;
-                    edited => { root.tab = 1; root.server-search-changed(); }
+            padding: root.dense ? 18px : 24px; spacing: 14px;
+            HorizontalLayout { spacing: 10px; height: 48px; vertical-stretch: 0;
+                VerticalLayout { spacing: 5px; horizontal-stretch: 1; min-width: 0px; preferred-width: 0px;
+                    Text { text: root.tab == 0 ? "Connection overview" : root.tab == 1 ? "Your servers" : root.tab == 2 ? "SNI profiles" : root.tab == 3 ? "Connection activity" : root.tab == 4 ? "Preferences" : "Diagnostics"; color: Theme.text; font-size: 22px; font-weight: 600; }
+                    Text { text: root.tab == 0 ? "Your connection. Your configuration." : root.tab == 1 ? "Manage and select your server profiles" : root.tab == 2 ? "Independent TLS SNI and WebSocket settings" : root.tab == 3 ? "Connection events and notifications" : root.tab == 4 ? "Connection and application preferences" : "Inspect and verify your connection"; color: Theme.muted; font-size: 12px; }
                 }
-                Rectangle { horizontal-stretch: 1; }
+                global-search := SearchField { visible: root.tab == 1; width: root.tab == 1 ? 200px : 0px; height: 34px; text <=> root.server-search;
+                    edited => { root.server-search-changed(); }
+                }
+                StatusChip { text: root.phase; indicator: root.status-color; reserved-width: 145px; height: 30px; border-radius: 15px; }
                 Button { icon: @image-url("../assets/v2/layout.svg"); tip: "Toggle compact layout"; checked: root.compact-layout; clicked => { root.compact-layout = !root.compact-layout; } }
-                notification-button := Button { icon: @image-url("../assets/v2/bell.svg"); tip: "Connection notifications"; clicked => { notification-popup.show(); }
-                    notification-popup := PopupWindow {
-                        width: 340px; height: 240px; x: parent.width - self.width; y: parent.height + 8px;
-                        Surface { VerticalLayout { padding: 16px; spacing: 12px;
-                            Text { text: "Connection notifications"; color: Theme.text; font-size: 15px; font-weight: 600; }
-                            TextEdit { text: root.notification-history; read-only: true; }
-                        } }
-                    }
-                }
-                Button { icon: @image-url("../assets/v2/settings.svg"); tip: "Open Settings"; clicked => { root.tab = 4; } }
-            }
-            HorizontalLayout { vertical-stretch: 0;
-                VerticalLayout { spacing: 5px;
-                    Text { text: root.tab == 0 ? "Overview" : root.tab == 1 ? "Servers" : root.tab == 2 ? "SNI Profiles" : root.tab == 3 ? "Activity" : root.tab == 4 ? "Settings" : "Diagnostics"; color: Theme.text; font-size: root.dense ? 24px : 28px; font-weight: 600; }
-                    Text { text: root.tab == 0 ? "Connection status and live traffic" : root.tab == 1 ? "Manage and select your server profiles" : root.tab == 2 ? "Independent TLS SNI and WebSocket settings" : root.tab == 3 ? "Connection events and notifications" : root.tab == 4 ? "Connection and application preferences" : "Inspect and verify your connection"; color: Theme.muted; font-size: 13px; }
-                }
             }
             if root.tab == 0: ScrollView {
                 min-height: 0px; content-width: self.width - 14px;
                 content-height: max(self.height, dashboard-content.preferred-height);
-                dashboard-content := VerticalLayout { spacing: 12px;
-                    Surface { min-height: root.dense ? 122px : 142px; vertical-stretch: 0;
-                        HorizontalLayout { padding: root.dense ? 17px : 22px; spacing: 23px;
-                            Rectangle { width: root.dense || root.width < 1050px ? 76px : 92px; height: self.width; border-radius: 100px; border-width: 5px; border-color: root.connection-live ? root.status-color : #42506a; background: transparent;
-                                Image { source: @image-url("../assets/v2/wifi.svg"); width: 43px; height: 43px; x: (parent.width - self.width)/2; y: (parent.height - self.height)/2; colorize: root.connection-live ? root.status-color : #778ba9; }
-                                Rectangle { x: parent.width - 16px; y: parent.height - 16px; width: 17px; height: 17px; border-radius: 9px; background: root.status-color; border-width: 3px; border-color: Theme.panel; }
+                dashboard-content := VerticalLayout { spacing: root.dense ? 8px : 12px;
+                    Surface { height: root.dense ? 146px : 166px; vertical-stretch: 0; border-color: #34535b; background: #172e33; border-radius: 12px;
+                        HorizontalLayout { padding: 20px; spacing: 24px;
+                            VerticalLayout { spacing: 8px; horizontal-stretch: 1; min-width: 0px;
+                                Text { text: root.phase == "ERROR" ? "CONNECTION NEEDS ATTENTION" : root.phase == "DEGRADED" || root.phase == "RECONNECTING" ? "RESTORING YOUR CONNECTION" : root.connection-live ? "CONNECTION ACTIVE" : root.connection-busy ? "ESTABLISHING YOUR CONNECTION" : "READY WHEN YOU ARE"; color: Theme.accent; font-size: 10px; font-weight: 600; letter-spacing: 0.7px; }
+                                Text { text: root.phase == "ERROR" ? "Let's get you connected." : root.phase == "DISCONNECTING" ? "Disconnecting…" : root.phase == "DEGRADED" || root.phase == "RECONNECTING" ? "Restoring your connection…" : root.connection-live ? "You're connected." : root.connection-busy ? "Connecting securely…" : "A clearer connection."; color: Theme.text; font-size: root.width < 1000px ? 24px : 28px; font-weight: 600; overflow: elide; }
+                                Text { text: root.detail == "idle" ? "Choose a server and connect when you're ready." : root.detail; color: #b5c7ce; font-size: 12px; height: 30px; wrap: word-wrap; overflow: elide; Tooltip { text: @markdown("\{root.detail}"); } }
+                                Text { text: root.tunnel-mode + "   ·   " + root.latency; color: Theme.muted; font-size: 11px; overflow: elide; }
                             }
-                            VerticalLayout { spacing: 8px; horizontal-stretch: 1;
-                                Text { text: root.phase == "ERROR" ? "Connection failed" : root.phase == "DISCONNECTING" ? "Disconnecting…" : root.connection-live ? "Connection active" : root.connection-busy ? "Connecting…" : "Not connected"; color: Theme.text; font-size: root.dense ? 22px : 25px; font-weight: 600; }
-                                Text { text: root.detail == "idle" ? "Select a server to start a secure connection" : root.detail; color: Theme.muted; font-size: 12px; wrap: word-wrap; }
-                                HorizontalLayout { spacing: 7px;
-                                    StatusChip { text: root.phase; indicator: root.status-color; }
-                                    if root.width > 1000px: StatusChip { text: root.tunnel-mode; indicator: Theme.icon; }
-                                    if root.width > 1150px: StatusChip { reserved-width: 210px; text: root.latency; indicator: Theme.icon; }
-                                    Rectangle { horizontal-stretch: 1; }
-                                }
-                            }
-                            HorizontalLayout { spacing: 8px;
-                                Button { text: root.connection-live ? "Disconnect" : root.connection-busy ? "Cancel" : "Connect"; primary: true; icon: root.connection-live || root.connection-busy ? @image-url("../assets/v2/power.svg") : @image-url("../assets/v2/play.svg"); min-width: root.width < 1000px ? 112px : 152px; height: 43px;
+                            VerticalLayout { spacing: 9px; alignment: center; width: root.width < 1000px ? 130px : 170px;
+                                Button { text: root.connection-live ? "Disconnect" : root.connection-busy ? "Cancel" : "Connect"; primary: true; min-width: root.width < 1000px ? 125px : 160px; height: 42px;
                                     clicked => { if root.connection-live || root.connection-busy { root.disconnect_clicked(); } else { root.connect_clicked(); } }
                                 }
-                                if root.width > 980px: Button { icon: @image-url("../assets/v2/chevron-down.svg"); height: 43px; tip: "More connection actions"; clicked => { connection-menu.show(); }
-                                    connection-menu := PopupWindow { width: 220px; height: 162px; x: parent.width - self.width; y: parent.height+6px;
-                                        Surface { VerticalLayout { padding: 8px; spacing: 5px;
-                                            Button { text: "Test selected server"; clicked => { root.test_clicked(); connection-menu.close(); } }
-                                            Button { text: "Reconnect"; clicked => { root.reconnect_now_clicked(); connection-menu.close(); } }
-                                            Button { text: "Connection settings"; clicked => { root.tab = 4; connection-menu.close(); } }
-                                        } }
-                                    }
-                                }
+                                Text { text: root.connection-live ? "See measured health below" : "Verification before success"; color: Theme.muted; font-size: 10px; horizontal-alignment: center; overflow: elide; }
                             }
                         }
                     }
-                    HorizontalLayout { spacing: 12px; min-height: 79px;
-                        Surface { min-width: 0px; preferred-width: 0px; horizontal-stretch: 1;
-                            HorizontalLayout { padding: root.dense ? 12px : 16px; spacing: 14px;
-                                Image { y: (parent.height - self.height)/2; source: @image-url("../assets/v2/servers.svg"); width: 28px; height: 28px; colorize: Theme.icon; }
-                                VerticalLayout { spacing: 6px; horizontal-stretch: 1;
-                                    Text { text: root.connection-live ? "Active server" : "Selected server"; color: Theme.text; font-size: 12px; }
-                                    Text { text: root.selected-server-name; color: Theme.text; font-size: 14px; font-weight: 500; overflow: elide; }
-                                    Text { text: root.selected-server-detail; color: Theme.muted; font-size: 11px; overflow: elide; }
-                                }
-                                Button { icon: @image-url("../assets/v2/chevron.svg"); tip: "Choose a server"; clicked => { root.tab = 1; } }
+                    Surface { height: 66px; vertical-stretch: 0;
+                        HorizontalLayout { padding: 13px; spacing: 14px;
+                            Rectangle { width: 24px; Image { y: (parent.height - self.height)/2; source: @image-url("../assets/v2/servers.svg"); width: 22px; height: 22px; colorize: Theme.icon; } }
+                            VerticalLayout { spacing: 5px; horizontal-stretch: 1; min-width: 0px;
+                                Text { text: root.selected-server-name + "   ·   " + root.selected-server-detail; color: Theme.text; font-size: 12px; overflow: elide; }
+                                Text { text: "Public IP   " + root.external-ip; color: Theme.muted; font-size: 11px; overflow: elide; }
                             }
-                        }
-                        Surface { min-width: 0px; preferred-width: 0px; horizontal-stretch: 1;
-                            HorizontalLayout { padding: root.dense ? 12px : 16px; spacing: 12px;
-                                if root.width > 1000px: Image { y: (parent.height - self.height)/2; source: @image-url("../assets/v2/globe.svg"); width: 29px; height: 29px; colorize: Theme.icon; }
-                                VerticalLayout { spacing: 7px; horizontal-stretch: 1;
-                                    Text { text: "Public IP"; color: Theme.text; font-size: 12px; }
-                                    Text { text: root.external-ip; color: Theme.text; font-size: 14px; overflow: elide; }
-                                    Text { text: root.external-ip == "-" ? "Not available" : "Last measured exit"; color: Theme.muted; font-size: 10px; }
-                                }
-                                Button { icon: @image-url("../assets/v2/refresh.svg"); tip: "Refresh measured public IP"; clicked => { root.refresh_ip_clicked(); } }
-                                if root.width > 1200px: Button { text: "Switch server"; icon: @image-url("../assets/v2/servers.svg"); clicked => { root.tab = 1; } }
-                            }
+                            Button { icon: @image-url("../assets/v2/refresh.svg"); tip: "Refresh measured public IP"; clicked => { root.refresh_ip_clicked(); } }
+                            Button { text: "Switch server"; clicked => { root.tab = 1; } }
                         }
                     }
-                    Surface { min-height: root.dense ? 124px : 147px; vertical-stretch: 0;
+                    Surface { height: 128px; vertical-stretch: 0;
                         VerticalLayout { padding: root.dense ? 12px : 14px; spacing: root.dense ? 10px : 12px;
                             HorizontalLayout { spacing: 12px;
                                 Image { y: (parent.height - self.height)/2; source: @image-url("../assets/v2/shield.svg"); width: 32px; height: 32px; colorize: Theme.icon; }
@@ -334,8 +293,10 @@ export component AppWindow inherits Window {
                                     Text { text: "Connection health"; color: Theme.text; font-size: 14px; font-weight: 500; }
                                     Text { text: root.health-schedule; color: Theme.muted; font-size: 10px; overflow: elide; }
                                 }
-                                if root.width > 1050px: StatusChip { text: root.health-state; indicator: root.status-color; }
-                                Button { text: root.width > 1000px ? "Verify connection" : "Verify"; icon: @image-url("../assets/v2/shield.svg"); clicked => { root.verify_full_tunnel_clicked(); } }
+                                if root.width > 1100px: Text { text: root.health-state + " · " + root.health-retries + " recoveries"; color: Theme.muted; font-size: 10px; }
+                                Button { text: "Verify now"; icon: @image-url("../assets/v2/shield.svg"); clicked => { root.verify_full_tunnel_clicked(); } }
+                                Button { text: root.width > 1000px ? "Reconnect now" : "Reconnect"; clicked => { root.reconnect_now_clicked(); } }
+                                if root.width > 1150px: Button { text: "Release protection"; tip: "Disconnect and release protection"; clicked => { root.disconnect_clicked(); } }
                             }
                             HorizontalLayout { spacing: 7px; min-height: 53px;
                                 HealthTile { label: "Exit IP"; value: root.external-ip == "-" ? "Not measured" : "Measured"; state: root.external-ip == "-" ? 0 : 1; icon: @image-url("../assets/v2/globe.svg"); compact: root.width < 1250px; }
@@ -349,21 +310,22 @@ export component AppWindow inherits Window {
                         }
                     }
                     HorizontalLayout { spacing: 12px;
-                        MetricCard { label: "Download"; value: root.down-speed; detail: root.down-total + " received"; icon: @image-url("../assets/v2/download.svg"); line: root.traffic-down-line; show-sparkline: root.width > 1350px; }
-                        MetricCard { label: "Upload"; value: root.up-speed; detail: root.up-total + " sent"; icon: @image-url("../assets/v2/upload.svg"); tint: Theme.upload; line: root.traffic-up-line; show-sparkline: root.width > 1350px; }
-                        MetricCard { label: "Session"; value: root.uptime; detail: "Session duration"; icon: @image-url("../assets/v2/clock.svg"); tint: Theme.icon; }
+                        MetricCard { label: "DOWNLOAD"; value: root.down-speed; detail: root.down-total + " received"; icon: @image-url("../assets/v2/download.svg"); line: root.traffic-down-line; show-sparkline: root.width > 1350px; }
+                        MetricCard { label: "UPLOAD"; value: root.up-speed; detail: root.up-total + " sent"; icon: @image-url("../assets/v2/upload.svg"); tint: Theme.upload; line: root.traffic-up-line; show-sparkline: root.width > 1350px; }
+                        MetricCard { label: "SESSION"; value: root.uptime; detail: "Session duration"; icon: @image-url("../assets/v2/clock.svg"); tint: Theme.icon; }
                     }
-                    HorizontalLayout { spacing: 12px; min-height: root.dense ? 150px : 190px; vertical-stretch: 1;
-                    Surface { min-width: 0px; preferred-width: 0px; horizontal-stretch: 1;
+                    Rectangle { min-width: 0px; preferred-width: 0px; height: root.dense ? 166px : 215px; vertical-stretch: 0; background: transparent;
+                    Surface { width: parent.width; height: parent.height; visible: !root.latency-chart-selected;
                         VerticalLayout { padding: 16px; spacing: 10px;
                             HorizontalLayout { spacing: 9px;
                                 if root.width > 1100px: Image { y: (parent.height - self.height)/2; source: @image-url("../assets/v2/activity.svg"); width: 25px; height: 25px; colorize: Theme.accent; }
                                 VerticalLayout { spacing: 4px; horizontal-stretch: 1;
                                     Text { text: "Traffic history"; color: Theme.text; font-size: 14px; font-weight: 500; }
-                                    if root.width > 1600px: Text { text: "Real-time network activity · last 60 samples"; color: Theme.muted; font-size: 10px; }
+                                    if root.width > 1150px: Text { text: "Measured activity · last 60 samples"; color: Theme.muted; font-size: 10px; }
                                 }
-                                Button { text: root.width > 1700px ? "Download" : ""; icon: @image-url("../assets/v2/download.svg"); checked: root.download-visible; tip: "Show or hide download bars"; clicked => { root.download-visible = !root.download-visible; } }
-                                Button { text: root.width > 1700px ? "Upload" : ""; icon: @image-url("../assets/v2/upload.svg"); checked: root.upload-visible; tip: "Show or hide upload bars"; clicked => { root.upload-visible = !root.upload-visible; } }
+                                Button { text: "Latency"; tip: "View measured DNS + TCP latency history"; clicked => { root.latency-chart-selected = true; } }
+                                Button { text: root.width > 1100px ? "Download" : ""; icon: @image-url("../assets/v2/download.svg"); checked: root.download-visible; tip: "Show or hide download bars"; clicked => { root.download-visible = !root.download-visible; } }
+                                Button { text: root.width > 1100px ? "Upload" : ""; icon: @image-url("../assets/v2/upload.svg"); checked: root.upload-visible; tip: "Show or hide upload bars"; clicked => { root.upload-visible = !root.upload-visible; } }
                                 if root.width > 2100px: StatusChip { text: "Last 60 samples"; indicator: Theme.icon; }
                             }
                             HorizontalLayout { spacing: 10px;
@@ -395,7 +357,7 @@ export component AppWindow inherits Window {
                             }
                         }
                     }
-                    Surface { min-width: 0px; preferred-width: 0px; horizontal-stretch: 1;
+                    Surface { width: parent.width; height: parent.height; visible: root.latency-chart-selected;
                         VerticalLayout { padding: 16px; spacing: 10px;
                             HorizontalLayout { spacing: 8px;
                                 if root.width > 1100px: Image { source: @image-url("../assets/v2/diagnostics.svg"); width: 25px; height: 25px; colorize: Theme.success; }
@@ -403,6 +365,7 @@ export component AppWindow inherits Window {
                                     Text { text: "Latency"; color: Theme.text; font-size: 14px; font-weight: 500; }
                                     Text { text: "DNS + TCP · every 3 s"; color: Theme.muted; font-size: 10px; overflow: elide; }
                                 }
+                                Button { text: "Traffic"; tip: "View real traffic bars"; clicked => { root.latency-chart-selected = false; } }
                                 Text { text: root.latency-current; color: Theme.text; font-size: 13px; width: root.width > 1100px ? 115px : 68px; overflow: elide; horizontal-alignment: right; }
                             }
                             HorizontalLayout { spacing: 10px;
@@ -427,6 +390,13 @@ export component AppWindow inherits Window {
                             Text { text: "Selected server · last 60 probes · failed probes leave gaps"; color: Theme.muted; font-size: 10px; overflow: elide; }
                         }
                     }
+                    }
+                    HorizontalLayout { spacing: 8px; height: 32px; vertical-stretch: 0;
+                        Button { text: "Test connection"; clicked => { root.test_clicked(); } }
+                        Button { text: "Verify full tunnel"; clicked => { root.verify_full_tunnel_clicked(); } }
+                        Button { text: "Refresh IP"; clicked => { root.refresh_ip_clicked(); } }
+                        Button { text: "Minimize"; clicked => { root.hide_to_tray_clicked(); } }
+                        Rectangle { horizontal-stretch: 1; }
                     }
                 }
             }

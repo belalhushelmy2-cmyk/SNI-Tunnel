@@ -5,22 +5,22 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 p=argparse.ArgumentParser(); p.add_argument('--assets',type=Path,required=True); p.add_argument('--output',type=Path,required=True); a=p.parse_args()
 a.assets=a.assets.resolve(); a.output=a.output.resolve(); a.output.mkdir(parents=True,exist_ok=True)
-work=ROOT/'target/offline-arch/2.1.4'; work.mkdir(parents=True,exist_ok=True)
+work=ROOT/'target/offline-arch/2.1.5'; work.mkdir(parents=True,exist_ok=True)
 build=work/'build'; build.mkdir(exist_ok=True)
-archive=a.assets/'sni-tunnel-v2_2.1.4_amd64.tar.gz'
-text=(ROOT/'packaging/arch/PKGBUILD').read_text().replace('2.0.1','2.1.4').replace('fee9a3bc2abebd8e2479dc19bee7b82167ea8a6e06f65154be3d62ad60840a82',hashlib.sha256(archive.read_bytes()).hexdigest())
+archive=a.assets/'sni-tunnel-v2_2.1.5_amd64.tar.gz'
+text=(ROOT/'packaging/arch/PKGBUILD').read_text().replace('2.0.1','2.1.5').replace('fee9a3bc2abebd8e2479dc19bee7b82167ea8a6e06f65154be3d62ad60840a82',hashlib.sha256(archive.read_bytes()).hexdigest())
 (build/'PKGBUILD').write_text(text); shutil.copy2(archive,build/archive.name)
 cmd=['makepkg','--nodeps','--cleanbuild','--noconfirm','--force']
 if os.getuid()==0:
  subprocess.run(['chown','-R','nobody:nobody',str(build)],check=True)
  cmd=['runuser','-u','nobody','--',*cmd]
 subprocess.run(cmd,cwd=build,check=True)
-app=build/'sni-tunnel-v2-bin-2.1.4-1-x86_64.pkg.tar.zst'
+app=build/'sni-tunnel-v2-bin-2.1.5-1-x86_64.pkg.tar.zst'
 assert app.is_file(), 'Expected current-version Arch package is missing'
 shutil.copy2(app,a.output/app.name); shutil.copy2(build/'PKGBUILD',a.output/'PKGBUILD')
 root=work/'bundle'; packages=root/'packages'; packages.mkdir(parents=True,exist_ok=True)
 shutil.copy2(app,packages/app.name)
-for pattern in ('SNI-Tunnel-V2-2.1.4-x86_64.AppImage','sni-tunnel-v2_2.1.4_amd64.tar.gz'):
+for pattern in ('SNI-Tunnel-V2-2.1.5-x86_64.AppImage','sni-tunnel-v2_2.1.5_amd64.tar.gz'):
  for asset in a.assets.glob(pattern): shutil.copy2(asset,root/asset.name)
 db=work/'db'; (db/'local').mkdir(parents=True,exist_ok=True); (db/'sync').mkdir(exist_ok=True)
 metadata={}

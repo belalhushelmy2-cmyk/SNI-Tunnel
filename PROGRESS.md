@@ -1,3 +1,11 @@
+# Compact desktop and Android/TV refinement — 2.1.5
+
+Implemented the earlier desktop hierarchy with slim navigation, teal connection
+panel, compact server/IP row, fixed health/metric cards and a full-width traffic
+plot with a measured-latency switch. Android/TV 1.0.5 groups actions and metrics,
+retains cutout-safe phone navigation and provides TV focus feedback. Network/core
+implementations and saved-profile formats are unchanged.
+
 # Dashboard follow-up — 2.1.4
 
 Restored actual-statistics traffic bars, fixed indicator dimensions, and added a

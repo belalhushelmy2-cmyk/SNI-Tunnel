@@ -1,4 +1,4 @@
-# SNI Tunnel for Android and Android TV 1.0.4
+# SNI Tunnel for Android and Android TV 1.0.5
 
 Two native Android apps share a VpnService, encrypted profile store and pinned
 network runtimes. Both flavors use Overview, Servers, SNI profiles, Activity, Settings and
@@ -115,3 +115,10 @@ The verification badge describes those probes; it does not certify every app.
 Download/upload rates are bytes per second measured at the packet forwarder;
 received/sent totals remain separate and accumulate across recovery.
 See [the separate-app regression fixture](test-support/README.md).
+
+## Arranged native screens — 1.0.5
+
+Compact phone menu beneath system/cutout insets, a TV navigation rail with visible
+D-pad focus, one connection action, grouped server/import/settings controls and
+fixed metric cards. All six pages and existing TLS/SNI/preferences remain. This
+release changes presentation only; the 1.0.4 networking repair is retained.

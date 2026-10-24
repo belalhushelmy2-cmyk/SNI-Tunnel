@@ -90,6 +90,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Rendered six native pages at five window sizes, scale {scale}");
         return Ok(());
     }
+    let click = |x, y| {
+        let position = LogicalPosition::new(x, y);
+        main.dispatch_event(WindowEvent::PointerMoved { position });
+        main.dispatch_event(WindowEvent::PointerPressed {
+            position,
+            button: PointerEventButton::Left,
+        });
+        main.dispatch_event(WindowEvent::PointerReleased {
+            position,
+            button: PointerEventButton::Left,
+        });
+    };
     // Numeric changes must not resize health or metric cards.
     let before_values = save(&main, &directory, "cards-before-values");
     ui.set_down_speed("1024.99 MB/s".into());
@@ -108,8 +120,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let offset = (y * main.size().width as usize + x) * 3;
         data[offset..offset + 3].to_vec()
     };
-    for y in [420, 500] {
-        for x in 254..1333 {
+    for y in [366, 445] {
+        for x in 214..1322 {
             assert_eq!(
                 pixel(&before_values, x, y),
                 pixel(&after_values, x, y),
@@ -161,25 +173,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ])));
     let bars = save(&main, &directory, "offline-chart-fixture");
     let count_color = |data: &[u8], color: [u8; 3]| {
-        (650..744)
-            .flat_map(|y| (340..776).map(move |x| (x, y)))
+        (610..688)
+            .flat_map(|y| (300..1310).map(move |x| (x, y)))
             .filter(|&(x, y)| pixel(data, x, y) == color)
             .count()
     };
     assert!(
-        count_color(&bars, [62, 155, 255]) > 100,
+        count_color(&bars, [121, 206, 197]) > 100,
         "download bars render from samples"
     );
     assert!(
-        count_color(&bars, [160, 105, 255]) > 100,
+        count_color(&bars, [130, 169, 220]) > 100,
         "upload bars render from samples"
     );
     ui.set_download_visible(false);
     let hidden = save(&main, &directory, "offline-download-hidden");
     assert_eq!(
-        count_color(&hidden, [62, 155, 255]),
+        count_color(&hidden, [121, 206, 197]),
         0,
         "download toggle hides bars"
+    );
+    click(1052., 573.);
+    let latency = save(&main, &directory, "offline-latency-fixture");
+    assert!(
+        count_color(&latency, [121, 213, 183]) > 20,
+        "Latency tab renders the measured trace"
     );
     ui.set_download_visible(true);
     ui.set_traffic(Default::default());
@@ -197,22 +215,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ui.on_verify_full_tunnel_clicked(move || state.set(3));
     let state = action.clone();
     ui.on_refresh_ip_clicked(move || state.set(4));
-    let click = |x, y| {
-        let position = LogicalPosition::new(x, y);
-        main.dispatch_event(WindowEvent::PointerMoved { position });
-        main.dispatch_event(WindowEvent::PointerPressed {
-            position,
-            button: PointerEventButton::Left,
-        });
-        main.dispatch_event(WindowEvent::PointerReleased {
-            position,
-            button: PointerEventButton::Left,
-        });
-    };
-    click(1189., 169.);
+    click(1230., 142.);
     assert_eq!(action.get(), 1, "primary Connect reaches backend callback");
     ui.set_connection_live(true);
-    click(1189., 169.);
+    click(1230., 142.);
     assert_eq!(
         action.get(),
         2,
@@ -220,28 +226,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     ui.set_connection_live(false);
     ui.set_connection_busy(true);
-    click(1189., 169.);
+    click(1230., 142.);
     assert_eq!(action.get(), 2, "Cancel reaches disconnect callback");
     ui.set_connection_busy(false);
-    click(1240., 390.);
+    click(980., 337.);
     assert_eq!(
         action.get(),
         3,
         "Verify reaches existing full-check callback"
     );
-    click(1150., 298.);
+    click(1174., 268.);
     assert_eq!(
         action.get(),
         4,
         "public IP refresh reaches existing callback"
     );
-    click(1240., 298.);
+    click(1260., 268.);
     assert_eq!(ui.get_tab(), 1, "Switch server opens server selection");
     ui.set_tab(0);
     main.set_size(LogicalSize::new(980., 900.));
     // A complete first click must activate each item, including icon/padding hits.
     for (index, x) in [(1, 25.), (2, 80.), (3, 151.), (4, 25.), (5, 80.), (0, 151.)] {
-        let position = LogicalPosition::new(x, 122. + index as f32 * 55.);
+        let position = LogicalPosition::new(x, 104. + index as f32 * 48.);
         main.dispatch_event(WindowEvent::PointerMoved { position });
         main.dispatch_event(WindowEvent::PointerPressed {
             position,
@@ -293,7 +299,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Fontconfig may resolve sans-serif to a wider user-selected font.
         // Search the action area while still requiring the correct row callback.
         for x in (540..585).step_by(8) {
-            let position = LogicalPosition::new(x as f32, 338. + index as f32 * 88.);
+            let position = LogicalPosition::new(x as f32, 271. + index as f32 * 88.);
             main.dispatch_event(WindowEvent::PointerMoved { position });
             main.dispatch_event(WindowEvent::PointerPressed {
                 position,
