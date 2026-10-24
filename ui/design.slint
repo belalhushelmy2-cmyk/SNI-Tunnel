@@ -130,7 +130,7 @@ export component Sparkline inherits Rectangle {
     clip: true;
     for segment in root.data: Path {
         width: root.width; height: root.height;
-        viewbox-width: 600; viewbox-height: 120;
+        viewbox-width: 600; viewbox-height: 120; fit: fill;
         fill: transparent; stroke: root.line-color; stroke-width: 1.8px;
         MoveTo { x: segment.x1; y: segment.y1; }
         LineTo { x: segment.x2; y: segment.y2; }
