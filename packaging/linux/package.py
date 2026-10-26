@@ -77,16 +77,37 @@ release="1"
 auto-req="disabled"
 """ + 'assets=[\n' + ',\n'.join(assets) + '\n]\n' + """[package.metadata.generate-rpm.requires]
 python3=">= 3.8"
-
+glibc=">= GLIBC_REQUIRED"
+libgcc="*"
+fontconfig="*"
+glib2="*"
+libxkbcommon="*"
+libxkbcommon-x11="*"
+libxcb="*"
+libX11="*"
+libXcursor="*"
+libXrandr="*"
+libXi="*"
+"libwayland-client.so.0()(64bit)"="*"
+"libwayland-cursor.so.0()(64bit)"="*"
+"libwayland-egl.so.1()(64bit)"="*"
+"libEGL.so.1()(64bit)"="*"
+"libGL.so.1()(64bit)"="*"
 iproute="*"
+nftables="*"
+libnotify="*"
 polkit="*"
+"/usr/bin/pkexec"="*"
 ca-certificates="*"
 kmod="*"
-glibc=">= 2.30"
+dbus="*"
+wl-clipboard="*"
+xclip="*"
 """
+        manifest = manifest.replace('GLIBC_REQUIRED', glibc_required)
         (rpmstage/'Cargo.toml').write_text(manifest)
         (rpmstage/'src').mkdir(exist_ok=True)
         (rpmstage/'src/main.rs').write_text('fn main() {}')
-        subprocess.run(['cargo-generate-rpm', '--auto-req', 'disabled', '-a', 'x86_64', '--payload-compress', 'gzip', '-o', str(out/'sni-tunnel-v2_2.1.5_amd64.rpm')], cwd=rpmstage, check=True)
+        subprocess.run(['cargo-generate-rpm', '--auto-req', 'disabled', '-a', 'x86_64', '--payload-compress', 'gzip', '-o', str(out/'sni-tunnel-v2-2.1.5-1.x86_64.rpm')], cwd=rpmstage, check=True)
     print('Packages written to', out)
 if __name__ == '__main__': main()

@@ -1,3 +1,11 @@
+# Fedora RPM packaging for desktop 2.1.5
+
+- Publish a native x86_64 RPM with complete Fedora runtime dependencies and bundled
+  Xray/BadVPN components, app launcher and icon.
+- Use library capabilities for Wayland/EGL/GL dependencies across package splits.
+- Detect and update existing Fedora RPM installations through DNF.
+- Add Fedora installation/reinstallation checks to the release workflow.
+
 # Android / Android TV 1.0.6 — CPU wake lock
 
 - Keep a service-owned partial CPU wake lock during VPN setup, forwarding and recovery.

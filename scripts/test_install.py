@@ -109,6 +109,29 @@ class InstallerTests(unittest.TestCase):
             self.assertTrue(any(c.args[0][:3]==['sudo','apt-get','install'] for c in run.call_args_list))
         self.assertFalse((self.home/'.local/opt/sni-tunnel-v2/current').exists())
 
+    def test_fedora_updates_existing_rpm_without_user_payload(self):
+        name = 'sni-tunnel-v2-2.1.0-1.x86_64.rpm'
+        self.release['assets'].append({'name': name, 'browser_download_url':
+            'https://github.com/' + i.REPO + '/releases/download/v2.1.0/' + name})
+        def package_download(url, dest):
+            if url.endswith('/SHA256SUMS'):
+                dest.write_text(self.digest + '  ' + name + '\n')
+            else:
+                self.download(url, dest)
+        target = {'kind': 'dnf', 'path': '/usr/bin/sni-tunnel-v2', 'label': 'existing RPM'}
+        with patch.object(i.shutil, 'which', return_value='/usr/bin/sudo'), patch.object(i.subprocess, 'run') as run:
+            self.run_main('--no-deps', target=target, download=package_download)
+            calls = [c.args[0] for c in run.call_args_list if c.args[0][:3] == ['sudo', 'dnf', 'install']]
+            self.assertEqual(len(calls), 1)
+            self.assertTrue(calls[0][-1].endswith(name))
+        self.assertFalse((self.home / '.local/opt/sni-tunnel-v2/current').exists())
+        self.assertIn('/usr/bin/sni-tunnel-v2', (self.home / '.local/bin/sni-tunnel-v2').read_text())
+
+    def test_fedora_rpm_detection(self):
+        with patch.object(i.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, 'sni-tunnel-v2-2.1.5-1.x86_64', '')) as run:
+            self.assertEqual(i.existing_installation('dnf', self.home)['kind'], 'dnf')
+            self.assertEqual(run.call_args.args[0], ['rpm', '-q', 'sni-tunnel-v2'])
+
     def test_native_package_detection(self):
         with patch.object(i.subprocess,'run',return_value=subprocess.CompletedProcess([],0,'sni-tunnel-v2-bin 2.0.1-1\n','')):
             self.assertEqual(i.existing_installation('pacman',self.home)['kind'],'pacman')

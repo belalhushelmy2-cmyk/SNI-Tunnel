@@ -22,7 +22,7 @@ API = 'https://api.github.com/repos/' + REPO + '/releases/latest'
 PACKAGES = {
     'apt-get': ['python3', 'ca-certificates', 'libfontconfig1', 'libglib2.0-bin', 'libxkbcommon0', 'libxkbcommon-x11-0', 'libxcb-xkb1', 'libxcursor1', 'libxrandr2', 'libxi6', 'libx11-6', 'libxcb1', 'libwayland-client0', 'iproute2', 'nftables', 'libnotify-bin', 'policykit-1', 'kmod', 'dbus', 'wl-clipboard', 'xclip'],
     'pacman': ['python', 'ca-certificates', 'fontconfig', 'glib2', 'libxkbcommon', 'libxkbcommon-x11', 'libxcb', 'libx11', 'libxcursor', 'libxrandr', 'libxi', 'wayland', 'iproute2', 'nftables', 'libnotify', 'polkit', 'kmod', 'dbus', 'wl-clipboard', 'xclip'],
-    'dnf': ['python3', 'ca-certificates', 'fontconfig', 'glib2', 'libxkbcommon', 'libxkbcommon-x11', 'libxcb', 'libX11', 'libXcursor', 'libXrandr', 'libXi', 'wayland-libs', 'iproute', 'nftables', 'libnotify', 'polkit', 'kmod', 'dbus', 'wl-clipboard', 'xclip'],
+    'dnf': ['python3', 'ca-certificates', 'fontconfig', 'glib2', 'libxkbcommon', 'libxkbcommon-x11', 'libxcb', 'libX11', 'libXcursor', 'libXrandr', 'libXi', 'libwayland-client.so.0()(64bit)', 'libwayland-cursor.so.0()(64bit)', 'libwayland-egl.so.1()(64bit)', 'libEGL.so.1()(64bit)', 'libGL.so.1()(64bit)', 'iproute', 'nftables', 'libnotify', 'polkit', 'kmod', 'dbus', 'wl-clipboard', 'xclip'],
     'zypper': ['python3', 'ca-certificates', 'fontconfig', 'glib2-tools', 'libxkbcommon0', 'libxkbcommon-x11-0', 'libxcb-xkb1', 'libX11-6', 'libXcursor1', 'libXrandr2', 'libXi6', 'libwayland-client0', 'iproute2', 'nftables', 'libnotify-tools', 'polkit', 'kmod', 'dbus-1', 'wl-clipboard', 'xclip'],
     'xbps-install': ['python3', 'ca-certificates', 'fontconfig', 'glib', 'libxkbcommon', 'libX11', 'libXcursor', 'libXrandr', 'libXi', 'libxcb', 'wayland', 'iproute2', 'nftables', 'libnotify', 'polkit', 'kmod', 'dbus', 'wl-clipboard', 'xclip'],
 }
@@ -127,6 +127,10 @@ def existing_installation(selected, home):
         result = subprocess.run(['dpkg-query', '-W', '-f=${Status} ${Version}', 'sni-tunnel-v2'], capture_output=True, text=True)
         if result.returncode == 0 and result.stdout.startswith('install ok installed '):
             return {'kind': 'apt-get', 'path': '/usr/bin/sni-tunnel-v2', 'label': result.stdout.strip()}
+    if selected == 'dnf':
+        result = subprocess.run(['rpm', '-q', 'sni-tunnel-v2'], capture_output=True, text=True)
+        if result.returncode == 0:
+            return {'kind': 'dnf', 'path': '/usr/bin/sni-tunnel-v2', 'label': result.stdout.strip()}
     for directory, command in (('/usr/lib/sni-tunnel-v2', '/usr/bin/sni-tunnel-v2'), ('/usr/lib/sni-tunnel', '/usr/bin/sni-tunnel')):
         if (Path(directory) / 'start.sh').is_file():
             # Never overwrite files owned by an unrecognized native package.
@@ -148,6 +152,11 @@ def asset_for_target(tag, assets, target, fallback):
         matches = [n for n in assets if re.fullmatch(r'sni-tunnel-v2-bin-' + re.escape(tag[1:]) + r'-[0-9]+-x86_64\.pkg\.tar\.zst', n)]
         if len(matches) != 1:
             raise RuntimeError('Release has no unique matching Arch package.')
+        name = matches[0]
+    elif target['kind'] == 'dnf':
+        matches = [n for n in assets if re.fullmatch(r'sni-tunnel-v2-' + re.escape(tag[1:]) + r'-[0-9]+\.x86_64\.rpm', n)]
+        if len(matches) != 1:
+            raise RuntimeError('Release has no unique matching Fedora RPM.')
         name = matches[0]
     elif target['kind'] == 'apt-get':
         name = 'sni-tunnel-v2_' + tag[1:] + '_amd64.deb'
@@ -312,6 +321,10 @@ def main():
                     raise RuntimeError('sudo is required to update the existing system installation.')
                 if target['kind'] == 'pacman':
                     subprocess.run(['sudo', 'pacman', '-U', str(temp / name)], check=True)
+                elif target['kind'] == 'dnf':
+                    temp.chmod(0o755)
+                    (temp / name).chmod(0o644)
+                    subprocess.run(['sudo', 'dnf', 'install', str(temp / name)], check=True)
                 elif target['kind'] == 'apt-get':
                     temp.chmod(0o755)
                     (temp / name).chmod(0o644)

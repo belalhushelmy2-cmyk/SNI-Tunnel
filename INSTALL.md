@@ -7,8 +7,8 @@ curl -fsSL https://raw.githubusercontent.com/belalhushelmy2-cmyk/SNI-Tunnel/main
 ```
 
 The same command installs or updates to the **latest stable GitHub release**.
-It detects an existing Arch/DEB package and updates it using `pacman -U` or
-`apt-get install` with the matching verified release package. An older manual
+It detects an existing Arch, DEB or RPM package and updates it using `pacman -U`,
+`apt-get install` or `dnf install` with the matching verified release package. An older manual
 installation under `/usr/lib/sni-tunnel` or `/usr/lib/sni-tunnel-v2` is updated
 in place with a backup, provided no package owns it. If neither exists, it
 installs or updates the user installation under `~/.local/opt/sni-tunnel-v2`.
@@ -55,6 +55,19 @@ Check compatibility and preview dependency commands without changing anything:
 ```bash
 bash "$HOME/sni-tunnel-install.sh" --check
 ```
+
+## Fedora native RPM
+
+Download `sni-tunnel-v2-2.1.5-1.x86_64.rpm` from the latest release, then run:
+
+```bash
+sudo dnf install ./sni-tunnel-v2-2.1.5-1.x86_64.rpm
+```
+
+DNF installs Fedora runtime dependencies and handles native package upgrades.
+The app appears as **SNI Tunnel V2** in the launcher. Saved profiles are retained.
+The terminal installer above also detects this RPM and updates it through DNF.
+See [Fedora package details](packaging/fedora/README.md).
 
 ## Linux compatibility
 

@@ -153,3 +153,5 @@ alone cannot install or reconfigure that server. Client-side WARP chaining is
 requiring a registered WARP/WireGuard profile and a compatible core. This
 performance change preserves the existing Linux 1.6.1 core, and does not add a
 nonfunctional WARP toggle or register an external account.
+
+Fedora x86_64 native RPM installation: [Fedora install instructions](INSTALL.md#fedora-native-rpm).

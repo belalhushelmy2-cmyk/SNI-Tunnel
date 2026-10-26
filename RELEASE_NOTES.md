@@ -15,6 +15,11 @@
   lifecycle checks in the emulator.
 - Desktop networking/core implementations are unchanged.
 
+Fedora RPM: `sni-tunnel-v2-2.1.5-1.x86_64.rpm`. Install or update with
+`sudo dnf install ./sni-tunnel-v2-2.1.5-1.x86_64.rpm`. DNF resolves Fedora runtime
+dependencies; the package includes the GUI, networking helpers and launcher.
+Fedora 44 installation/reinstallation and native Wayland launch checks passed.
+
 Includes Linux portable/archive, AppImage, DEB, RPM, Arch binary package, Windows
 portable/installer and signed Android phone/TV APKs. Android retains its application
 IDs and signing identity for upgrades. The Linux install/update command selects

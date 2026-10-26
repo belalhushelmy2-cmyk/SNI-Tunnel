@@ -1,3 +1,21 @@
+# Fedora RPM validation — 2026-10-27
+
+- Built sni-tunnel-v2-2.1.5-1.x86_64.rpm with the native desktop GUI, Linux helper,
+  Xray, BadVPN, launcher/icon and licenses. Runtime dependencies include the
+  actual glibc floor, graphics/X11/Wayland libraries, Python, PolicyKit/pkexec,
+  iproute, nftables, notifications and clipboard utilities.
+- Official Fedora 44 x86_64 image: DNF resolved and installed all dependencies;
+  installation and reinstallation passed, rpm digest/file verification passed,
+  the desktop entry validated, and GUI/core CLI smoke checks passed.
+- Reinstallation retained the application-data marker. A native Wayland window
+  opened using the Fedora runtime with Slint's software renderer. The test used
+  an isolated rootless filesystem and an empty profile store.
+- All 16 installer regressions passed, including existing-RPM detection and a
+  verified DNF update without creating a duplicate unmanaged installation.
+- Fedora CI installation/reinstallation is now required for future publication.
+  Physical Fedora SELinux/TUN authorization and actual VPN forwarding were not
+  exercised by these package checks. Desktop networking code is unchanged.
+
 # Android 1.0.6 update to release 2.1.5 — 2026-10-27
 
 - Signed phone and TV updates: 33 JVM tests per flavor, zero lint errors, existing

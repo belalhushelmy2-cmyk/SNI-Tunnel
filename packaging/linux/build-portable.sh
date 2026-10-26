@@ -26,4 +26,4 @@ cmake --build target/badvpn-portable -j 4
 cp target/badvpn-portable/tun2socks/badvpn-tun2socks packaging/staging/linux/core/
 chmod +x packaging/staging/linux/core/xray packaging/staging/linux/core/badvpn-tun2socks
 python3 -m unittest discover -s packaging/linux -p test_network.py
-python3 packaging/linux/package.py --binary target/x86_64-unknown-linux-gnu/release/sni-tunnel
+python3 packaging/linux/package.py --binary target/x86_64-unknown-linux-gnu/release/sni-tunnel "$@"
