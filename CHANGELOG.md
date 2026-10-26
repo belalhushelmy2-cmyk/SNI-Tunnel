@@ -1,3 +1,9 @@
+# Android / Android TV 1.0.6 — CPU wake lock
+
+- Keep a service-owned partial CPU wake lock during VPN setup, forwarding and recovery.
+- Release it on disconnect, startup failure, VPN revocation and destruction.
+- Preserve normal screen-off behavior, profiles and application signing identities.
+
 # 2.1.5 — compact desktop and arranged Android/TV screens
 
 - Restore the earlier desktop overview hierarchy with restrained teal/navy styling.

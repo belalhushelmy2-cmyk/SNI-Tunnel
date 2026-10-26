@@ -218,11 +218,11 @@ jobs:
           pattern: v2-*
           path: release
           merge-multiple: true
-      - name: Retrieve verified signed Android 1.0.5 APKs from the staged release
+      - name: Retrieve verified signed Android 1.0.6 APKs from the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'SNI-Tunnel-Android*-1.0.5.apk' --dir release
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'SNI-Tunnel-Android*-1.0.6.apk' --dir release
           python3 - <<'PYAPK'
           import json, hashlib
           from pathlib import Path

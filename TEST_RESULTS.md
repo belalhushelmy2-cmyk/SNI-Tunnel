@@ -1,3 +1,14 @@
+# Android 1.0.6 update to release 2.1.5 — 2026-10-27
+
+- Signed phone and TV updates: 33 JVM tests per flavor, zero lint errors, existing
+  signing identity and application IDs retained; versionCode 7.
+- Both flavors held a partial CPU wake lock with the screen asleep while a
+  separate-UID app verified the complete controlled 2 MiB transfer. Both released
+  the lock after Disconnect; failed TV startup also released it.
+- Details and scope: android/TEST_RESULTS.md and android/test-support/README.md.
+  Physical OEM standby behavior remains unverified.
+- Desktop binaries and their prior validation remain unchanged.
+
 # 2.1.5 interface validation — 2026-10-24
 
 - Native Slint rendering covers six pages at 1366×768, 1536×1024, 1920×1080,

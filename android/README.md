@@ -1,4 +1,4 @@
-# SNI Tunnel for Android and Android TV 1.0.5
+# SNI Tunnel for Android and Android TV 1.0.6
 
 Two native Android apps share a VpnService, encrypted profile store and pinned
 network runtimes. Both flavors use Overview, Servers, SNI profiles, Activity, Settings and
@@ -122,3 +122,11 @@ Compact phone menu beneath system/cutout insets, a TV navigation rail with visib
 D-pad focus, one connection action, grouped server/import/settings controls and
 fixed metric cards. All six pages and existing TLS/SNI/preferences remain. This
 release changes presentation only; the 1.0.4 networking repair is retained.
+
+## CPU wake lock — 1.0.6
+
+Phone and TV acquire a non-reference-counted `PARTIAL_WAKE_LOCK` after the
+user starts the foreground VPN service. It covers connection setup, forwarding
+and recovery while the display may turn off normally. Disconnect, startup
+failure, VPN permission revocation and service destruction release it. It is
+held for the service lifetime rather than expiring during a long VPN session.

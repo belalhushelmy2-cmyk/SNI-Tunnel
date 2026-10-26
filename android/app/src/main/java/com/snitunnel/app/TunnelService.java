@@ -1,5 +1,6 @@
 package com.snitunnel.app;
 
+import android.annotation.SuppressLint;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -9,6 +10,7 @@ import android.content.pm.ServiceInfo;
 import android.net.VpnService;
 import android.os.Build;
 import android.os.ParcelFileDescriptor;
+import android.os.PowerManager;
 import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
@@ -24,6 +26,7 @@ public final class TunnelService extends VpnService {
     private final ScheduledExecutorService worker=Executors.newSingleThreadScheduledExecutor();
     private volatile boolean stopping=true;
     private boolean recoveryExhausted;
+    private PowerManager.WakeLock cpuWakeLock;
     private Process core;
     private ParcelFileDescriptor tun;
     private ScheduledFuture<?> monitor;
@@ -37,8 +40,26 @@ public final class TunnelService extends VpnService {
         if(intent!=null&&"RECONNECT".equals(intent.getAction())&&active){worker.execute(()->recover(true));return START_NOT_STICKY;}
         if(active)return START_NOT_STICKY;
         Events.beginAttempt();stopping=false;active=true;verified=false;recoveryExhausted=false;settings=new AppSettings(this);update("Preparing connection…");
-        try{foreground();}catch(Exception e){finish("Foreground service failed: "+Events.clean(e.getMessage()));return START_NOT_STICKY;}
+        try{foreground();acquireCpuWakeLock();}catch(Exception e){finish("VPN service failed: "+Events.clean(e.getMessage()));return START_NOT_STICKY;}
         worker.execute(this::connect);return START_NOT_STICKY;
+    }
+    @SuppressLint("WakelockTimeout")
+    private synchronized void acquireCpuWakeLock(){
+        // A user-started VPN has no fixed duration. Keep its CPU work alive through
+        // screen-off/recovery; finish/onDestroy always release this service-owned lock.
+        if(cpuWakeLock==null){
+            PowerManager manager=getSystemService(PowerManager.class);
+            if(manager==null)throw new IllegalStateException("CPU power service unavailable");
+            cpuWakeLock=manager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,getPackageName()+":TunnelCpu");
+            cpuWakeLock.setReferenceCounted(false);
+        }
+        if(!cpuWakeLock.isHeld())cpuWakeLock.acquire();
+    }
+    private synchronized void releaseCpuWakeLock(){
+        if(cpuWakeLock!=null){
+            if(cpuWakeLock.isHeld())cpuWakeLock.release();
+            cpuWakeLock=null;
+        }
     }
     private void update(String value){status=value;Events.add(value);}
     private void foreground(){
@@ -135,12 +156,14 @@ public final class TunnelService extends VpnService {
     }
     private void write(File file,String value)throws Exception{try(FileOutputStream out=new FileOutputStream(file)){out.write(value.getBytes(StandardCharsets.UTF_8));}}
     private synchronized void finish(String message){
-        stopping=true;verified=false;if(monitor!=null){monitor.cancel(false);monitor=null;}stopDatapath();
-        if(tun!=null){try{tun.close();}catch(IOException ignored){}tun=null;}
-        if(config!=null)config.delete();new File(getFilesDir(),"active-tunnel.yml").delete();
-        active=false;latency=-1;connectedAt=0;uploaded=0;downloaded=0;uploadRate=downloadRate=0;verifyRequested=false;trafficMeter.reset(android.os.SystemClock.elapsedRealtime());
-        if(!status.equals(message))update(message);stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();
+        try{
+            stopping=true;verified=false;if(monitor!=null){monitor.cancel(false);monitor=null;}stopDatapath();
+            if(tun!=null){try{tun.close();}catch(IOException ignored){}tun=null;}
+            if(config!=null)config.delete();new File(getFilesDir(),"active-tunnel.yml").delete();
+            active=false;latency=-1;connectedAt=0;uploaded=0;downloaded=0;uploadRate=downloadRate=0;verifyRequested=false;trafficMeter.reset(android.os.SystemClock.elapsedRealtime());
+            if(!status.equals(message))update(message);stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();
+        }finally{releaseCpuWakeLock();}
     }
     @Override public void onRevoke(){stopping=true;worker.execute(()->finish("VPN permission revoked"));}
-    @Override public void onDestroy(){stopping=true;worker.shutdownNow();finish(status);super.onDestroy();}
+    @Override public void onDestroy(){try{stopping=true;worker.shutdownNow();finish(status);}finally{releaseCpuWakeLock();super.onDestroy();}}
 }

@@ -1,3 +1,21 @@
+# Android 1.0.6 CPU wake-lock validation — 2026-10-27
+
+- Signed phone/TV release builds passed with 33 JVM tests per flavor and zero
+  lint errors. Both signing certificates match 1.0.5; versionCode is 7.
+- API 35 emulator, both flavors: no CPU lock when disconnected; current
+  PARTIAL_WAKE_LOCK with the application-specific TunnelCpu tag when connected.
+- With the display asleep, both flavors retained the lock while the separate-UID
+  probe resolved the fixture hostname and verified a complete 2 MiB payload/hash.
+  The display remained asleep; this controlled transfer is not a WAN benchmark.
+- Disconnect released the lock on both flavors. A failed synthetic localhost
+  startup on TV also released it; both flavors share the same service lifecycle.
+- Cleanup releases the lock in finally blocks on finish and onDestroy. Reconnect
+  retains the existing service-owned lock without increasing a reference count.
+- Reproduction steps: test-support/README.md. Physical OEM standby policies and
+  battery optimization behavior remain unverified.
+
+## Earlier validation
+
 # Android 1.0.5 UI validation — 2026-10-24
 
 - Signed phone and TV release builds passed; 33 JVM tests per flavor and zero
