@@ -54,7 +54,7 @@ libxkbcommon, libX11, libXcursor, libXrandr, libXi, libxcb, mesa-libs, wayland,
 glib, dbus, xclip and ca_root_nss:
 
 ```sh
-cargo build --release --locked
+RUST_MIN_STACK=16777216 CARGO_PROFILE_RELEASE_LTO=false cargo build --release --locked
 python3 packaging/native/package.py --output releases/v2/freebsd
 ```
 

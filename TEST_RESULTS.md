@@ -1,19 +1,60 @@
+# FreeBSD native proxy preview — 2026-10-27
+
+- FreeBSD 14.3 amd64 VM: native optimized Rust GUI build and 129 library tests
+  passed. The published build uses release opt-level s with LTO disabled to
+  bound linker memory; application/networking behavior is unchanged.
+- Native pkg creation, installation, dependency/file-integrity checks and ELF
+  loader resolution passed. The package declares its FreeBSD:14:amd64 ABI and
+  includes the GUI, SHA-256 pinned Xray 26.3.27, launcher, icon and licenses.
+- The installed application passed native X11/software GUI startup, a controlled
+  HTTP proxy round trip and VMess over WebSocket/TLS with a custom SNI and explicit
+  certificate pin. Wrong pins, strict untrusted certificates and unverified
+  certificate discovery were rejected. No real server credentials were used.
+- Full-device TUN, kill switch and automatic system proxy management are not
+  implemented. Physical FreeBSD desktop/GPU behavior and real VPN servers were
+  not tested. Final package inspection confirmed all files are under /usr/local.
+
+# macOS native proxy previews — 2026-10-27
+
+- Native Apple Silicon and Intel Rust builds and library test gates passed on
+  macOS 14.8.9 arm64 and macOS 15.7.9 x86_64. Deployment target: macOS 12.
+- Final DMGs bundle architecture-matched, SHA-256 pinned Xray 26.3.27. App/helper
+  ad-hoc signatures passed deep strict verification; disk images passed hdiutil
+  verification and were mounted read-only for the runtime tests.
+- Both architectures passed a Mach-O loader audit: GUI and Xray dependencies
+  refer only to Apple system libraries/frameworks, with no Homebrew runtime paths.
+- Both packaged apps passed an HTTP round trip through the bundled core, native
+  GUI startup, and VMess over WebSocket/TLS with an explicit certificate pin and
+  custom SNI. Wrong pins, strict untrusted certificates and unverified discovery
+  were rejected. Only generated fixture identities/keys and loopback servers were used.
+- These are HTTP/SOCKS proxy previews. TUN, kill switch, automatic system proxy
+  management and a macOS menu-bar tray are not implemented. There is no Developer
+  ID signature/notarization. Real servers, physical macOS 12 machines and full
+  application routing were not tested.
+
 # Solus and AerynOS package validation — 2026-10-27
 
 - Native Solus `.eopkg` built with ypkg in the official Solus build image.
   eopkg resolved runtime dependencies from the Solus Polaris repository,
-  installed/reinstalled the package, and passed the package integrity check.
+  installed/reinstalled the package, retained an application-data marker, and
+  passed the package integrity check.
   The desktop entry passed desktop-file-validate. A basic font dependency was
   added after a bare build-root test exposed the lack of system fonts.
 - AerynOS `.stone` built with the unmodified upstream os-tools v0.26.1 stone
   writer, inspected/indexed by moss and dependency-resolved against the AerynOS
   unstable repository. A clean ephemeral installation passed with all required
   library/tool providers and font dependencies resolved.
+- Native AerynOS moss 0.26.6 completed normal stateful installation, removal
+  and reinstallation from the published GitHub repository. Three real states
+  were recorded and the application-data marker survived all operations.
 - Both isolated distro runtimes opened a native xdg_shell Wayland window with
   the software renderer and empty temporary stores. A real HTTP round trip
   through the packaged Xray and local proxy passed against a loopback fixture.
 - The native package GUI/core/helper payload is drawn from the SHA-256 pinned
   published v2.1.5 Linux portable archive. No user servers or keys were used.
+- The updater compatibility preview was also run as an unprivileged user in
+  the Solus runtime: it detected the installed eopkg and selected the native
+  release artifact and dependency commands.
 - 19 terminal installer tests passed, including eopkg transaction selection,
   installed-package detection and refusal to continue after database failure.
   Existing moss files are protected from unmanaged replacement.

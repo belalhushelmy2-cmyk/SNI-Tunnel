@@ -34,7 +34,7 @@ jobs:
       - name: Build application bundle and disk image
         run: python3 packaging/native/package.py --output releases/v2/macos
       - name: Smoke test native application
-        run: python3 packaging/native/smoke.py --dmg releases/v2/macos/SNI-Tunnel-V2-2.1.5-macos-${{ matrix.arch }}.dmg --output releases/v2/macos/validation-${{ matrix.arch }}.json
+        run: python3 packaging/native/smoke.py --dmg releases/v2/macos/SNI-Tunnel-V2-2.1.5-macos-${{ matrix.arch }}.dmg --tls-fixture --output releases/v2/macos/validation-${{ matrix.arch }}.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: macos-${{ matrix.arch }}

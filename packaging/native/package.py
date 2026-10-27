@@ -75,6 +75,14 @@ def macos(binary, stage, out):
                  CFBundleVersion=VERSION, CFBundleIconFile='SNI.icns',
                  LSMinimumSystemVersion='12.0', NSHighResolutionCapable=True)
     (contents / 'Info.plist').write_bytes(plistlib.dumps(plist))
+    dependencies = {}
+    for target in [exe, contents / 'Helpers/xray']:
+        output = subprocess.check_output(['otool', '-L', str(target)], text=True)
+        libraries = [line.strip().split(' (', 1)[0] for line in output.splitlines()[1:] if line.strip()]
+        if not libraries or not all(lib.startswith(('/usr/lib/', '/System/Library/')) for lib in libraries):
+            raise RuntimeError(f'Unbundled runtime library in {target}: {libraries}')
+        dependencies[str(target.relative_to(app))] = libraries
+    (out / f'dependency-audit-{platform.machine()}.json').write_text(json.dumps(dependencies, indent=2) + '\n')
     # Ad-hoc signing provides arm64 executable integrity, not Developer ID trust.
     for target in [contents / 'Helpers/xray', exe, app]:
         run('codesign', '--force', '--sign', '-', target)

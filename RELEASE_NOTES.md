@@ -26,6 +26,19 @@ runtime dependencies. Both passed isolated native installation, Wayland startup
 and controlled local-proxy round trips. See INSTALL.md for eopkg/moss commands.
 The terminal updater now recognizes existing Solus packages and uses eopkg.
 
+macOS proxy previews: native Apple Silicon and Intel DMGs bundle Xray 26.3.27.
+Both passed native tests, mounted-app startup and custom-SNI VMess/WS/TLS tests
+with explicit certificate pins. They support local HTTP/SOCKS proxy mode, with
+no full-device TUN, kill switch or automatic system proxy management. Untrusted
+certificates need a verified pin in the server editor. Apps are ad-hoc signed,
+not Apple Developer ID signed or notarized. See INSTALL.md before installing.
+
+FreeBSD proxy preview: `sni-tunnel-v2-2.1.5.pkg` targets FreeBSD 14 amd64 and
+bundles the native Slint GUI with Xray 26.3.27. Native build/unit tests, package
+installation/integrity checks and custom-SNI VMess/WS/TLS pin tests passed on
+FreeBSD 14.3. Install with `sudo pkg install ./sni-tunnel-v2-2.1.5.pkg`.
+As on macOS, use the local HTTP/SOCKS proxy; full-device TUN is not implemented.
+
 Includes Linux portable/archive, AppImage, DEB, RPM, Arch binary package, Windows
 portable/installer and signed Android phone/TV APKs. Android retains its application
 IDs and signing identity for upgrades. The Linux install/update command selects
