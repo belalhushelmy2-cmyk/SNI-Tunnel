@@ -219,6 +219,36 @@ class InstallerTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 i.compatible()
 
+    def test_solus_updates_the_native_package(self):
+        name = 'sni-tunnel-v2-2.1.0-1-1-x86_64.eopkg'
+        url = 'https://github.com/' + i.REPO + '/releases/download/v2.1.0/' + name
+        self.release['assets'].append({'name': name, 'browser_download_url': url})
+        def package_download(url, dest):
+            if url.endswith('/SHA256SUMS'):
+                dest.write_text(self.digest + '  ' + name + '\n')
+            else:
+                self.download(url, dest)
+        target = {'kind': 'eopkg', 'path': '/usr/bin/sni-tunnel-v2', 'label': 'Solus package'}
+        with patch.object(i.shutil, 'which', return_value='/usr/bin/sudo'), patch.object(i.subprocess, 'run') as run:
+            self.run_main('--no-deps', target=target, download=package_download)
+            transactions = [c.args[0] for c in run.call_args_list if c.args[0][:3] == ['sudo', 'eopkg', 'install']]
+            self.assertEqual(len(transactions), 1)
+            self.assertTrue(transactions[0][-1].endswith(name))
+        self.assertFalse((self.home / '.local/opt/sni-tunnel-v2/current').exists())
+
+    def test_solus_database_detection_and_failure(self):
+        with patch.object(i.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, '\x1b[32msni-tunnel-v2\x1b[0m - desktop\n')):
+            self.assertEqual(i.existing_installation('eopkg', self.home)['kind'], 'eopkg')
+        with patch.object(i.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, '')):
+            with self.assertRaisesRegex(RuntimeError, 'Solus package database'):
+                i.existing_installation('eopkg', self.home)
+
+    def test_solus_dependency_mapping(self):
+        commands = i.dependency_commands('eopkg')
+        self.assertEqual(commands[0], ['eopkg', 'update-repo'])
+        self.assertIn('mesalib', commands[1])
+        self.assertIn('ca-certs', commands[1])
+
     def test_atomic_text_and_desktop_paths(self):
         path = self.home / 'with spaces' / 'launcher'
         i.atomic_text(path, 'hello', 0o755)

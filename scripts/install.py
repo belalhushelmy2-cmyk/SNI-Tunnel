@@ -24,6 +24,7 @@ PACKAGES = {
     'pacman': ['python', 'ca-certificates', 'fontconfig', 'glib2', 'libxkbcommon', 'libxkbcommon-x11', 'libxcb', 'libx11', 'libxcursor', 'libxrandr', 'libxi', 'wayland', 'iproute2', 'nftables', 'libnotify', 'polkit', 'kmod', 'dbus', 'wl-clipboard', 'xclip'],
     'dnf': ['python3', 'ca-certificates', 'fontconfig', 'glib2', 'libxkbcommon', 'libxkbcommon-x11', 'libxcb', 'libX11', 'libXcursor', 'libXrandr', 'libXi', 'libwayland-client.so.0()(64bit)', 'libwayland-cursor.so.0()(64bit)', 'libwayland-egl.so.1()(64bit)', 'libEGL.so.1()(64bit)', 'libGL.so.1()(64bit)', 'iproute', 'nftables', 'libnotify', 'polkit', 'kmod', 'dbus', 'wl-clipboard', 'xclip'],
     'zypper': ['python3', 'ca-certificates', 'fontconfig', 'glib2-tools', 'libxkbcommon0', 'libxkbcommon-x11-0', 'libxcb-xkb1', 'libX11-6', 'libXcursor1', 'libXrandr2', 'libXi6', 'libwayland-client0', 'iproute2', 'nftables', 'libnotify-tools', 'polkit', 'kmod', 'dbus-1', 'wl-clipboard', 'xclip'],
+    'eopkg': ['python3', 'ca-certs', 'glibc', 'libgcc', 'fontconfig', 'liberation-fonts-ttf', 'glib2', 'libxkbcommon', 'libx11', 'libxcb', 'libxcursor', 'libxrandr', 'libxi', 'wayland', 'mesalib', 'iproute2', 'nftables', 'libnotify', 'polkit', 'kmod', 'dbus', 'wl-clipboard', 'xclip'],
     'xbps-install': ['python3', 'ca-certificates', 'fontconfig', 'glib', 'libxkbcommon', 'libX11', 'libXcursor', 'libXrandr', 'libXi', 'libxcb', 'wayland', 'iproute2', 'nftables', 'libnotify', 'polkit', 'kmod', 'dbus', 'wl-clipboard', 'xclip'],
 }
 
@@ -60,6 +61,8 @@ def dependency_commands(name):
         return [[name, '-Syu', '--needed', *packages]]
     if name == 'zypper':
         return [[name, 'install', *packages]]
+    if name == 'eopkg':
+        return [[name, 'update-repo'], [name, 'install', *packages]]
     if name == 'xbps-install':
         return [[name, '-S', *packages]]
     return [[name, 'install', *packages]]
@@ -131,6 +134,15 @@ def existing_installation(selected, home):
         result = subprocess.run(['rpm', '-q', 'sni-tunnel-v2'], capture_output=True, text=True)
         if result.returncode == 0:
             return {'kind': 'dnf', 'path': '/usr/bin/sni-tunnel-v2', 'label': result.stdout.strip()}
+    if selected == 'eopkg':
+        result = subprocess.run(['eopkg', 'list-installed'], capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError('Cannot query the Solus package database; no files were replaced.')
+        listing = re.sub(r'\x1b\[[0-9;]*m', '', result.stdout)
+        if any(line.split() and line.split()[0] == 'sni-tunnel-v2' for line in listing.splitlines()):
+            return {'kind': 'eopkg', 'path': '/usr/bin/sni-tunnel-v2', 'label': 'existing Solus package'}
+    if shutil.which('moss') and Path('/usr/lib/sni-tunnel-v2/start.sh').is_file():
+        raise RuntimeError('This installation is managed by AerynOS moss. Update with moss repo update and moss sync --update; see INSTALL.md. No /usr files were changed.')
     for directory, command in (('/usr/lib/sni-tunnel-v2', '/usr/bin/sni-tunnel-v2'), ('/usr/lib/sni-tunnel', '/usr/bin/sni-tunnel')):
         if (Path(directory) / 'start.sh').is_file():
             # Never overwrite files owned by an unrecognized native package.
@@ -139,6 +151,8 @@ def existing_installation(selected, home):
                 owner = ['pacman', '-Qo', directory + '/start.sh']
             elif selected == 'apt-get':
                 owner = ['dpkg-query', '-S', directory + '/start.sh']
+            elif selected == 'eopkg':
+                raise RuntimeError('Unrecognized system installation on Solus; update it with eopkg or use --target user. No package files were replaced.')
             elif shutil.which('rpm'):
                 owner = ['rpm', '-qf', directory + '/start.sh']
             if owner and subprocess.run(owner, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
@@ -157,6 +171,11 @@ def asset_for_target(tag, assets, target, fallback):
         matches = [n for n in assets if re.fullmatch(r'sni-tunnel-v2-' + re.escape(tag[1:]) + r'-[0-9]+\.x86_64\.rpm', n)]
         if len(matches) != 1:
             raise RuntimeError('Release has no unique matching Fedora RPM.')
+        name = matches[0]
+    elif target['kind'] == 'eopkg':
+        matches = [n for n in assets if re.fullmatch(r'sni-tunnel-v2-' + re.escape(tag[1:]) + r'-[0-9]+-[0-9]+-x86_64\.eopkg', n)]
+        if len(matches) != 1:
+            raise RuntimeError('Release has no unique matching Solus package.')
         name = matches[0]
     elif target['kind'] == 'apt-get':
         name = 'sni-tunnel-v2_' + tag[1:] + '_amd64.deb'
@@ -325,6 +344,10 @@ def main():
                     temp.chmod(0o755)
                     (temp / name).chmod(0o644)
                     subprocess.run(['sudo', 'dnf', 'install', str(temp / name)], check=True)
+                elif target['kind'] == 'eopkg':
+                    temp.chmod(0o755)
+                    (temp / name).chmod(0o644)
+                    subprocess.run(['sudo', 'eopkg', 'install', str(temp / name)], check=True)
                 elif target['kind'] == 'apt-get':
                     temp.chmod(0o755)
                     (temp / name).chmod(0o644)

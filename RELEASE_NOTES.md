@@ -20,6 +20,12 @@ Fedora RPM: `sni-tunnel-v2-2.1.5-1.x86_64.rpm`. Install or update with
 dependencies; the package includes the GUI, networking helpers and launcher.
 Fedora 44 installation/reinstallation and native Wayland launch checks passed.
 
+Solus and AerynOS: native `.eopkg` and `.stone` packages include the published
+Linux desktop, Xray and BadVPN, with launcher integration and distro-managed
+runtime dependencies. Both passed isolated native installation, Wayland startup
+and controlled local-proxy round trips. See INSTALL.md for eopkg/moss commands.
+The terminal updater now recognizes existing Solus packages and uses eopkg.
+
 Includes Linux portable/archive, AppImage, DEB, RPM, Arch binary package, Windows
 portable/installer and signed Android phone/TV APKs. Android retains its application
 IDs and signing identity for upgrades. The Linux install/update command selects

@@ -1,0 +1,6 @@
+[package]
+name = "sni-stone-pack"
+version = "0.1.0"
+edition = "2024"
+[dependencies]
+stone = { path = "../../../target/aerynos-os-tools/crates/stone" }

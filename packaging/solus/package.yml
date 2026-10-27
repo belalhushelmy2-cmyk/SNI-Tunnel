@@ -1,0 +1,45 @@
+name       : sni-tunnel-v2
+version    : '2.1.5'
+release    : 1
+source     :
+    - https://github.com/belalhushelmy2-cmyk/SNI-Tunnel/releases/download/v2.1.5/sni-tunnel-v2_2.1.5_amd64.tar.gz : 8ac14af8127139578ca6e9197edcba6a1db158bf31b6ebfcdd3ff25594661a3f
+homepage   : https://github.com/belalhushelmy2-cmyk/SNI-Tunnel
+license    : LicenseRef-SNI-Tunnel
+component  : network.clients
+summary    : Native VMess desktop with independent TLS SNI
+strip      : false
+debug      : false
+autodep    : true
+rundeps    :
+    - glibc
+    - libgcc
+    - fontconfig
+    - liberation-fonts-ttf
+    - glib2
+    - libxkbcommon
+    - libx11
+    - libxcb
+    - libxcursor
+    - libxrandr
+    - libxi
+    - wayland
+    - mesalib
+    - python3
+    - iproute2
+    - nftables
+    - libnotify
+    - polkit
+    - ca-certs
+    - kmod
+    - dbus
+    - wl-clipboard
+    - xclip
+description: |
+    Slint desktop with bundled Xray and BadVPN, independent SNI, Linux TUN,
+    real traffic statistics and DNS recovery. Updates preserve user profiles.
+install    : |
+    install -d "$installdir/usr/lib/sni-tunnel-v2"
+    cp -a . "$installdir/usr/lib/sni-tunnel-v2/"
+    install -Dm00755 "$pkgfiles/sni-tunnel-v2" "$installdir/usr/bin/sni-tunnel-v2"
+    install -Dm00644 "$pkgfiles/sni-tunnel-v2.desktop" "$installdir/usr/share/applications/sni-tunnel-v2.desktop"
+    install -Dm00644 icon.png "$installdir/usr/share/icons/hicolor/256x256/apps/sni-tunnel-v2.png"

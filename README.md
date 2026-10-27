@@ -155,3 +155,6 @@ performance change preserves the existing Linux 1.6.1 core, and does not add a
 nonfunctional WARP toggle or register an external account.
 
 Fedora x86_64 native RPM installation: [Fedora install instructions](INSTALL.md#fedora-native-rpm).
+
+Solus and AerynOS native installation: [distro packages and updates](INSTALL.md#solus-native-package).
+Native macOS/FreeBSD proxy previews: [support scope and build instructions](packaging/native/README.md).

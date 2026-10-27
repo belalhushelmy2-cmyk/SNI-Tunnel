@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /usr/lib/sni-tunnel-v2/start.sh "$@"

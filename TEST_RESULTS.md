@@ -1,3 +1,27 @@
+# Solus and AerynOS package validation — 2026-10-27
+
+- Native Solus `.eopkg` built with ypkg in the official Solus build image.
+  eopkg resolved runtime dependencies from the Solus Polaris repository,
+  installed/reinstalled the package, and passed the package integrity check.
+  The desktop entry passed desktop-file-validate. A basic font dependency was
+  added after a bare build-root test exposed the lack of system fonts.
+- AerynOS `.stone` built with the unmodified upstream os-tools v0.26.1 stone
+  writer, inspected/indexed by moss and dependency-resolved against the AerynOS
+  unstable repository. A clean ephemeral installation passed with all required
+  library/tool providers and font dependencies resolved.
+- Both isolated distro runtimes opened a native xdg_shell Wayland window with
+  the software renderer and empty temporary stores. A real HTTP round trip
+  through the packaged Xray and local proxy passed against a loopback fixture.
+- The native package GUI/core/helper payload is drawn from the SHA-256 pinned
+  published v2.1.5 Linux portable archive. No user servers or keys were used.
+- 19 terminal installer tests passed, including eopkg transaction selection,
+  installed-package detection and refusal to continue after database failure.
+  Existing moss files are protected from unmanaged replacement.
+- These are package/runtime tests sharing the host kernel; they do not establish
+  a complete Solus/AerynOS boot, physical polkit-agent behavior, full-device TUN
+  routing, IPv6 protection or real-server connectivity. Isolated roots have no
+  running systemd/udev daemons; related usysconf reload hooks reported this.
+
 # Fedora RPM validation — 2026-10-27
 
 - Built sni-tunnel-v2-2.1.5-1.x86_64.rpm with the native desktop GUI, Linux helper,
