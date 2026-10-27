@@ -16,6 +16,9 @@ on:
 permissions:
   contents: read
   actions: read
+concurrency:
+  group: native-package-verification-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   macos:
     if: github.event_name == 'push' || inputs.platform != 'freebsd'

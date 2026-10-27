@@ -32,8 +32,10 @@ def tls_fixture(binary, temporary, env, fixture_port):
     candidates = [binary.parent / 'core/xray', binary.parent.parent / 'Helpers/xray']
     xray = next(path for path in candidates if path.is_file())
     cert, key = temporary / 'fixture.pem', temporary / 'fixture.key'
+    cert_config = temporary / 'certificate.cnf'
+    cert_config.write_text('[req]\ndistinguished_name=dn\nprompt=no\nx509_extensions=server_cert\n[dn]\nCN=localhost\n[server_cert]\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:localhost\n')
     subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
-                    '-keyout', str(key), '-out', str(cert), '-days', '1', '-subj', '/CN=localhost'],
+                    '-keyout', str(key), '-out', str(cert), '-days', '1', '-config', str(cert_config)],
                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     key.chmod(0o600)
     identity, remote_port = str(uuid.uuid4()), port()
