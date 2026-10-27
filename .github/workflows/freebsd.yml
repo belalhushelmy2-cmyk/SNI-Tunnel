@@ -32,7 +32,7 @@ jobs:
             export PATH="$HOME/.cargo/bin:/usr/local/bin:$PATH"
             export CARGO_BUILD_JOBS=3 RUST_MIN_STACK=16777216
             cargo build --release --locked
-            SNI_TUNNEL_DATA_DIR=/tmp/sni-tests cargo test --locked --lib
+            SNI_TUNNEL_DATA_DIR=/tmp/sni-tests cargo test --release --locked --lib
             python3 packaging/native/package.py --output releases/v2/freebsd
             pkg install -y ./releases/v2/freebsd/sni-tunnel-v2-2.1.5.pkg
             pkg check -s sni-tunnel-v2
