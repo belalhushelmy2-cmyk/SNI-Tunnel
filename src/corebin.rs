@@ -120,6 +120,7 @@ pub fn packaged_core_path() -> Option<std::path::PathBuf> {
     let candidates = [
         dir.join("core").join(CORE_FILE),
         dir.join(CORE_FILE),
+        dir.join("../Helpers").join(CORE_FILE),
         std::path::PathBuf::from("/usr/lib/sni-tunnel").join(CORE_FILE),
     ];
     candidates.into_iter().find(|c| c.is_file())

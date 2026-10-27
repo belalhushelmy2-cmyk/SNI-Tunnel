@@ -56,9 +56,12 @@ def macos(binary, stage, out):
     contents = app / 'Contents'
     exe = contents / 'MacOS/sni-tunnel'
     copy(binary, exe, 0o755)
-    core(exe.parent / 'core')
+    core(contents / 'Helpers')
+    license_bytes = (contents / 'Helpers/LICENSE').read_bytes()
+    (contents / 'Helpers/LICENSE').unlink()
     resources = contents / 'Resources'
     documentation(resources)
+    (resources / 'licenses/Xray-LICENSE.txt').write_bytes(license_bytes)
     iconset = stage / 'SNI.iconset'
     iconset.mkdir()
     for size in [16, 32, 128, 256, 512]:
@@ -73,7 +76,7 @@ def macos(binary, stage, out):
                  LSMinimumSystemVersion='12.0', NSHighResolutionCapable=True)
     (contents / 'Info.plist').write_bytes(plistlib.dumps(plist))
     # Ad-hoc signing provides arm64 executable integrity, not Developer ID trust.
-    for target in [exe.parent / 'core/xray', exe, app]:
+    for target in [contents / 'Helpers/xray', exe, app]:
         run('codesign', '--force', '--sign', '-', target)
     run('codesign', '--verify', '--deep', '--strict', app)
     (stage / 'Applications').symlink_to('/Applications')
