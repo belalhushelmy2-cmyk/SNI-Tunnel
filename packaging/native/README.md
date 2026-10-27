@@ -2,7 +2,7 @@
 
 These native desktop builds use the same Slint interface, profile editor,
 custom SNI, MUX, measured traffic and automatic proxy reconnection as Linux.
-They bundle a SHA-256 pinned Xray 1.6.1 for their OS and architecture.
+They bundle a SHA-256 pinned Xray 26.3.27 (matching the desktop proxy backend) for their OS and architecture.
 They are **local HTTP/SOCKS proxy clients**: full-device TUN, system proxy
 management and kill switch protection are not implemented on these platforms.
 Configure the application that should use the tunnel with the HTTP/SOCKS ports

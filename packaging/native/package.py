@@ -102,7 +102,7 @@ def freebsd(binary, stage, out):
     copy(ROOT / 'assets/icon-256.png', prefix / 'share/icons/hicolor/256x256/apps/sni-tunnel-v2.png')
     # Resolve installed native package versions/origins; let pkg install deps.
     deps = {}
-    for name in ['fontconfig', 'libxkbcommon', 'libX11', 'libXcursor', 'libXrandr', 'libXi', 'libxcb', 'mesa-libs', 'wayland', 'glib', 'dbus', 'xclip', 'ca_root_nss']:
+    for name in ['fontconfig', 'libxkbcommon', 'libX11', 'libXcursor', 'libXrandr', 'libXi', 'libxcb', 'mesa-libs', 'wayland', 'glib', 'dbus', 'xclip', 'ca_root_nss', 'dejavu']:
         value = subprocess.check_output(['pkg', 'query', '%n|%v|%o', name], text=True).strip().split('|')
         deps[value[0]] = dict(version=value[1], origin=value[2])
     manifest = dict(name='sni-tunnel-v2', version=VERSION, origin='net/sni-tunnel-v2',
