@@ -44,7 +44,7 @@ pub async fn ensure_package(pkg: &CorePackage, verify: bool, logger: &Logger) ->
         if xray_path().is_file() {
             return Ok(());
         }
-        bail!("Linux Xray binary is missing; install the complete Linux V2 package (a Windows core cannot run here)");
+        bail!("Native Xray binary is missing; install the complete package for this operating system and CPU architecture");
     }
     if package_present(pkg) {
         return Ok(());

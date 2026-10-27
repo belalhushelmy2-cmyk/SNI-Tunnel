@@ -110,6 +110,7 @@ export component AppWindow inherits Window {
     in-out property <bool> connection-busy: false;
     in-out property <bool> connection-live: false;
     in-out property <bool> platform-windows: false;
+    in property <bool> platform-full-tunnel: true;
     in-out property <string> tunnel-mode: "Local proxy";
     in-out property <string> latency: "Not measured";
     in-out property <[TrafficPoint]> traffic: [];
@@ -616,10 +617,11 @@ export component AppWindow inherits Window {
                 Text { text: "SOCKS proxy port"; color: Theme.text; width: 160px; vertical-alignment: center; }
                 LineEdit { text <=> root.socks-port; width: 120px; }
             }
-            CheckBox { text: "Manage desktop system proxy while connected"; checked <=> root.system-proxy; }
-            CheckBox { text: "TUN mode · route the whole device (requires permission)"; checked <=> root.tun-mode; }
+            CheckBox { text: "Manage desktop system proxy while connected"; checked <=> root.system-proxy; enabled: root.platform-full-tunnel; }
+            CheckBox { text: "TUN mode · route the whole device (requires permission)"; checked <=> root.tun-mode; enabled: root.platform-full-tunnel; }
+            if !root.platform-full-tunnel: Text { text: "This platform supports local HTTP/SOCKS proxy mode. Configure your browser or application to use the ports above. Full-device TUN is not available."; color: Theme.muted; wrap: word-wrap; }
             CheckBox { text: "NetMod TAP compatibility test (disconnect NetMod first)"; checked <=> root.netmod-compatibility; enabled: root.platform-windows; }
-            CheckBox { text: "Kill switch: block traffic when the tunnel is down"; checked <=> root.kill-switch; }
+            CheckBox { text: "Kill switch: block traffic when the tunnel is down"; checked <=> root.kill-switch; enabled: root.platform-full-tunnel; }
             Text { text: "LOCAL PROXY PERFORMANCE"; color: Theme.accent; font-size: 11px; font-weight: 700; }
             ComboBox { model: ["Balanced", "Low Latency", "Maximum Throughput"]; current-index <=> root.performance-mode; enabled: !root.tun-mode; }
             Text { text: root.performance-mode == 0 ? "Balanced: standard TCP buffering, 8 KiB relay buffers." : root.performance-mode == 1 ? "Low Latency: TCP_NODELAY on local relay sockets, 8 KiB buffers." : "Maximum Throughput: TCP_NODELAY, 64 KiB buffers per direction (more memory per connection)."; color: Theme.muted; font-size: 11px; wrap: word-wrap; }

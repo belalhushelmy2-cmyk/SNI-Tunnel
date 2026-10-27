@@ -53,7 +53,12 @@ fn d_log_level() -> String {
     "warning".into()
 }
 fn d_mode() -> String {
-    "system".into()
+    if cfg!(any(windows, target_os = "linux")) {
+        "system"
+    } else {
+        "manual"
+    }
+    .into()
 }
 fn d_true() -> bool {
     true

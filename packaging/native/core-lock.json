@@ -1,0 +1,8 @@
+{
+  "version": "1.6.1",
+  "artifacts": {
+    "freebsd-amd64": ["Xray-freebsd-64.zip", "f5ac490a982fecbf408a4e38824745b0ab28359d36d88aa86fa1fa79d60457ea"],
+    "darwin-x86_64": ["Xray-macos-64.zip", "ebd64d19e28a657eb7741c8757339696e8c99d6b36980c416f532aa66ddc8088"],
+    "darwin-arm64": ["Xray-macos-arm64-v8a.zip", "22365db24b0820afd1e9dee47199b578363ce9b067ee05bd4b2ecc915e9c8da2"]
+  }
+}

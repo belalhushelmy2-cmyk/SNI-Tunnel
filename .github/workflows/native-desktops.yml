@@ -1,0 +1,80 @@
+name: macOS and FreeBSD previews
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/native-desktops.yml'
+      - 'packaging/native/**'
+      - 'src/autostart_macos.rs'
+      - 'src/tray_portable.rs'
+permissions:
+  contents: read
+concurrency:
+  group: native-desktops-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  CARGO_BUILD_JOBS: '3'
+  RUST_MIN_STACK: '16777216'
+jobs:
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 75
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '12.0'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.99.1 --profile minimal && rustup default 1.99.1
+      - name: Native build and unit tests
+        run: |
+          cargo build --release --locked
+          SNI_TUNNEL_DATA_DIR="$RUNNER_TEMP/sni-tests" cargo test --locked --lib
+      - name: Build application bundle and disk image
+        run: python3 packaging/native/package.py --output releases/v2/macos
+      - name: Smoke test native application
+        run: python3 packaging/native/smoke.py --binary target/release/sni-tunnel --output releases/v2/macos/validation-${{ matrix.arch }}.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: macos-${{ matrix.arch }}
+          path: releases/v2/macos/*
+  freebsd:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Build and verify on FreeBSD 14.3
+        uses: vmactions/freebsd-vm@c46abacb49f09938ca4e1702d15d836285d694cc
+        with:
+          release: '14.3'
+          usesh: true
+          mem: 8192
+          cpu: 4
+          prepare: |
+            pkg install -y curl python3 pkgconf fontconfig libxkbcommon libX11 libXcursor libXrandr libXi libxcb mesa-libs wayland glib dbus xclip ca_root_nss xorg-vfbserver
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup-init.sh
+            sh /tmp/rustup-init.sh -y --profile minimal --default-toolchain 1.99.1
+          run: |
+            set -eu
+            export PATH="$HOME/.cargo/bin:/usr/local/bin:$PATH"
+            export CARGO_BUILD_JOBS=3 RUST_MIN_STACK=16777216
+            cargo build --release --locked
+            SNI_TUNNEL_DATA_DIR=/tmp/sni-tests cargo test --locked --lib
+            python3 packaging/native/package.py --output releases/v2/freebsd
+            pkg install -y ./releases/v2/freebsd/sni-tunnel-v2-2.1.5.pkg
+            pkg check -s sni-tunnel-v2
+            Xvfb :98 -screen 0 1366x768x24 &
+            export DISPLAY=:98 SLINT_BACKEND=winit-software
+            python3 packaging/native/smoke.py --binary /usr/local/lib/sni-tunnel-v2/sni-tunnel --output releases/v2/freebsd/validation-freebsd.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: freebsd-amd64
+          path: releases/v2/freebsd/*

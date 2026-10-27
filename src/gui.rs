@@ -80,6 +80,7 @@ pub fn run(cfg: Arc<Mutex<AppConfig>>, logger: Logger) -> Result<i32> {
     let ui = AppWindow::new()?;
     ui.set_app_version(format!("v{}", env!("CARGO_PKG_VERSION")).into());
     ui.set_platform_windows(cfg!(windows));
+    ui.set_platform_full_tunnel(cfg!(any(windows, target_os = "linux")));
     ui.on_matches(|text, query| text.to_lowercase().contains(&query.to_lowercase()));
     let editor_slot: Rc<RefCell<Option<ServerEditor>>> = Rc::new(RefCell::new(None));
     let state = Arc::new(UiState::default());

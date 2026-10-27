@@ -1,4 +1,4 @@
-﻿//! Clipboard access without extra dependencies.
+//! Clipboard access without extra dependencies.
 //!
 //! * Windows: the Win32 clipboard API.
 //! * Linux: `wl-paste` (Wayland) or `xclip`/`xsel` (X11) as a subprocess.
@@ -133,7 +133,7 @@ fn write_text_windows(text: &str) -> anyhow::Result<()> {
 // Unix (Linux)
 // ---------------------------------------------------------------------------
 
-#[cfg(not(windows))]
+#[cfg(all(not(windows), not(target_os = "macos")))]
 fn read_text_unix() -> anyhow::Result<String> {
     use anyhow::{Context, Result};
     use std::process::Command;
@@ -155,7 +155,7 @@ fn read_text_unix() -> anyhow::Result<String> {
     .context("read clipboard")
 }
 
-#[cfg(not(windows))]
+#[cfg(all(not(windows), not(target_os = "macos")))]
 fn write_text_unix(text: &str) -> anyhow::Result<()> {
     use anyhow::{Context, Result};
     use std::io::Write;
@@ -188,4 +188,24 @@ fn write_text_unix(text: &str) -> anyhow::Result<()> {
         "no clipboard tool found (install wl-clipboard or xclip)"
     ))
     .context("write clipboard")
+}
+
+#[cfg(target_os = "macos")]
+fn read_text_unix() -> anyhow::Result<String> {
+    let output = std::process::Command::new("/usr/bin/pbpaste").output()?;
+    anyhow::ensure!(output.status.success(), "Could not read macOS clipboard");
+    Ok(String::from_utf8(output.stdout)?)
+}
+#[cfg(target_os = "macos")]
+fn write_text_unix(text: &str) -> anyhow::Result<()> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let mut child = Command::new("/usr/bin/pbcopy")
+        .stdin(Stdio::piped())
+        .spawn()?;
+    let written = child.stdin.take().unwrap().write_all(text.as_bytes());
+    let status = child.wait()?;
+    written?;
+    anyhow::ensure!(status.success(), "Could not write macOS clipboard");
+    Ok(())
 }

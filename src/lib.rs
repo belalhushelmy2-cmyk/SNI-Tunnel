@@ -49,10 +49,14 @@ pub mod sysproxy;
 #[cfg(all(windows, feature = "gui"))]
 pub mod tray;
 
-#[cfg(not(windows))]
+#[cfg(all(not(windows), not(target_os = "macos")))]
 pub mod autostart_linux;
-#[cfg(not(windows))]
+#[cfg(all(not(windows), not(target_os = "macos")))]
 pub use autostart_linux as autostart;
+#[cfg(target_os = "macos")]
+pub mod autostart_macos;
+#[cfg(target_os = "macos")]
+pub use autostart_macos as autostart;
 #[cfg(not(windows))]
 pub mod dpapi_linux;
 #[cfg(not(windows))]
@@ -65,10 +69,20 @@ pub use elevate_linux as elevate;
 pub mod sysproxy_linux;
 #[cfg(not(windows))]
 pub use sysproxy_linux as sysproxy;
-#[cfg(all(not(windows), feature = "gui"))]
+#[cfg(all(any(target_os = "linux", target_os = "freebsd"), feature = "gui"))]
 pub mod tray_linux;
-#[cfg(all(not(windows), feature = "gui"))]
+#[cfg(all(any(target_os = "linux", target_os = "freebsd"), feature = "gui"))]
 pub use tray_linux as tray;
+#[cfg(all(
+    not(any(windows, target_os = "linux", target_os = "freebsd")),
+    feature = "gui"
+))]
+pub mod tray_portable;
+#[cfg(all(
+    not(any(windows, target_os = "linux", target_os = "freebsd")),
+    feature = "gui"
+))]
+pub use tray_portable as tray;
 
 #[cfg(windows)]
 pub mod child_job;
