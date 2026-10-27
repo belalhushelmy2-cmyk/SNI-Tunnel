@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: Publish v2.1.5 after successful builds
+        description: Publish v2.1.6 after successful builds
         type: boolean
         default: false
 permissions:
@@ -16,7 +16,7 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_BUILD_JOBS: '4'
   RUST_MIN_STACK: '16777216'
-  RELEASE_TAG: v2.1.5
+  RELEASE_TAG: v2.1.6
 
 concurrency:
   group: sni-release-${{ github.ref }}
@@ -61,7 +61,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake pkg-config libfontconfig1-dev libxkbcommon-dev libxkbcommon-x11-0 libxcb-xkb1 libxcursor1 libxrandr2 libxi6 dpkg-dev libx11-dev libgl1-mesa-dev python3-tk python3-venv xvfb fonts-dejavu-core nftables iproute2 libnotify-bin
       - name: Check formatting
-        run: rustfmt --edition 2021 --config skip_children=true --check src/migration.rs src/linux_tunnel.rs src/gui.rs src/engine.rs src/model.rs src/util.rs src/store.rs src/session.rs src/main.rs src/vmess.rs src/sysproxy_linux.rs src/autostart_linux.rs build.rs tests/migration_v2.rs tests/import_persistence.rs src/profile_import.rs src/latency.rs src/tray_linux.rs src/tray.rs src/storecli.rs src/health.rs src/kill_switch.rs src/network_events.rs src/diag.rs src/netcheck.rs src/tun.rs src/dial.rs src/performance.rs src/localproxy.rs tests/performance_config.rs examples/perf_probe.rs examples/v2_preview.rs
+        run: rustfmt --edition 2021 --config skip_children=true --check src/migration.rs src/linux_tunnel.rs src/gui.rs src/engine.rs src/model.rs src/util.rs src/store.rs src/session.rs src/main.rs src/vmess.rs src/sysproxy_linux.rs src/autostart_linux.rs build.rs tests/migration_v2.rs tests/import_persistence.rs src/profile_import.rs src/latency.rs src/tray_linux.rs src/tray.rs src/storecli.rs src/health.rs src/kill_switch.rs src/network_events.rs src/diag.rs src/netcheck.rs src/tun.rs src/dial.rs src/performance.rs src/localproxy.rs src/app_usage.rs tests/performance_config.rs examples/perf_probe.rs examples/v2_preview.rs
       - name: Clippy
         run: cargo clippy --all-targets --locked
       - name: Rust regression suite
@@ -94,18 +94,18 @@ jobs:
       - name: Build and smoke-test AppImage
         run: |
           python3 packaging/linux/appimage.py
-          xvfb-run -a python3 packaging/linux/verify-appimage.py releases/v2/linux/SNI-Tunnel-V2-2.1.5-x86_64.AppImage
+          xvfb-run -a python3 packaging/linux/verify-appimage.py releases/v2/linux/SNI-Tunnel-V2-2.1.6-x86_64.AppImage
       - name: Verify Debian payload without installing
         run: |
-          dpkg-deb --info releases/v2/linux/sni-tunnel-v2_2.1.5_amd64.deb
-          dpkg-deb --extract releases/v2/linux/sni-tunnel-v2_2.1.5_amd64.deb target/deb-check
+          dpkg-deb --info releases/v2/linux/sni-tunnel-v2_2.1.6_amd64.deb
+          dpkg-deb --extract releases/v2/linux/sni-tunnel-v2_2.1.6_amd64.deb target/deb-check
           target/deb-check/usr/lib/sni-tunnel-v2/sni-tunnel --help
           cmp target/deb-check/usr/lib/sni-tunnel-v2/sni-tunnel target/x86_64-unknown-linux-gnu/release/sni-tunnel
       - name: Bundle Ubuntu 24.04 dependencies and executable offline installer
         run: ./packaging/offline/ubuntu.sh
       - name: Package complete source and release documentation
         run: |
-          python3 packaging/release-source.py releases/v2/linux/SNI-Tunnel-V2-2.1.5-source.zip
+          python3 packaging/release-source.py releases/v2/linux/SNI-Tunnel-V2-2.1.6-source.zip
           cp TEST_RESULTS.md MIGRATION.md RELEASE_NOTES.md releases/v2/linux/
       - uses: actions/upload-artifact@v4
         with:
@@ -164,7 +164,7 @@ jobs:
         run: |
           & target/release/sni-tunnel.exe --help
           if ($LASTEXITCODE -ne 0) { throw 'Windows executable startup failed' }
-          if ((Get-Item target/release/sni-tunnel.exe).VersionInfo.ProductVersion -ne '2.1.5') { throw 'Windows version resource mismatch' }
+          if ((Get-Item target/release/sni-tunnel.exe).VersionInfo.ProductVersion -ne '2.1.6') { throw 'Windows version resource mismatch' }
           $seven = Join-Path $env:ProgramFiles '7-Zip/7z.exe'
           & $seven x -y releases/v2/windows/SNI-Tunnel-V2-Setup-x64.exe '-otarget/installer-check'
           if ($LASTEXITCODE -ne 0) { throw 'Installer extraction failed' }
@@ -214,8 +214,8 @@ jobs:
           path: release
       - name: Install RPM with Fedora dependencies
         run: |
-          dnf -y install ./release/sni-tunnel-v2-2.1.5-1.x86_64.rpm
-          rpm -K release/sni-tunnel-v2-2.1.5-1.x86_64.rpm
+          dnf -y install ./release/sni-tunnel-v2-2.1.6-1.x86_64.rpm
+          rpm -K release/sni-tunnel-v2-2.1.6-1.x86_64.rpm
           rpm -V sni-tunnel-v2
           desktop-file-validate /usr/share/applications/sni-tunnel-v2.desktop
           /usr/lib/sni-tunnel-v2/sni-tunnel --help
@@ -223,7 +223,7 @@ jobs:
           test -x /usr/lib/sni-tunnel-v2/core/badvpn-tun2socks
           mkdir -p /root/.local/share/sni-tunnel-v2
           echo retained > /root/.local/share/sni-tunnel-v2/package-test-marker
-          dnf -y reinstall ./release/sni-tunnel-v2-2.1.5-1.x86_64.rpm
+          dnf -y reinstall ./release/sni-tunnel-v2-2.1.6-1.x86_64.rpm
           grep -qx retained /root/.local/share/sni-tunnel-v2/package-test-marker
           rpm -V sni-tunnel-v2
 
@@ -251,7 +251,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'SNI-Tunnel-Android*-1.0.6.apk' --dir release
+          gh release download "v2.1.5" --repo "$GITHUB_REPOSITORY" --pattern 'SNI-Tunnel-Android*-1.0.6.apk' --dir release
           python3 - <<'PYAPK'
           import json, hashlib
           from pathlib import Path
@@ -265,9 +265,9 @@ jobs:
           from pathlib import Path
           import hashlib
           root = Path('release')
-          required = ['sni-tunnel-v2-2.1.5-1.x86_64.rpm', 'SNI-Tunnel-V2-Setup-x64.exe', 'SNI-Tunnel-V2-2.1.5-x86_64.AppImage', 'sni-tunnel-v2_2.1.5_amd64.deb', 'sni-tunnel-v2_2.1.5_amd64.tar.gz', 'SNI-Tunnel-V2-2.1.5-source.zip', 'TEST_RESULTS.md', 'MIGRATION.md', 'RELEASE_NOTES.md']
-          required += ['sni-tunnel-v2-bin-2.1.5-1-x86_64.pkg.tar.zst', 'SNI-Tunnel-V2-2.1.5-windows-x64-portable.zip']
-          required += [f'SNI-Tunnel-V2-2.1.5-{platform}-x86_64-offline.{ext}' for platform in ['arch','ubuntu-24.04'] for ext in ['bin','tar.gz']]
+          required = ['sni-tunnel-v2-2.1.6-1.x86_64.rpm', 'SNI-Tunnel-V2-Setup-x64.exe', 'SNI-Tunnel-V2-2.1.6-x86_64.AppImage', 'sni-tunnel-v2_2.1.6_amd64.deb', 'sni-tunnel-v2_2.1.6_amd64.tar.gz', 'SNI-Tunnel-V2-2.1.6-source.zip', 'TEST_RESULTS.md', 'MIGRATION.md', 'RELEASE_NOTES.md']
+          required += ['sni-tunnel-v2-bin-2.1.6-1-x86_64.pkg.tar.zst', 'SNI-Tunnel-V2-2.1.6-windows-x64-portable.zip']
+          required += [f'SNI-Tunnel-V2-2.1.6-{platform}-x86_64-offline.{ext}' for platform in ['arch','ubuntu-24.04'] for ext in ['bin','tar.gz']]
           import json
           required += list(json.loads(Path('android/release-assets.json').read_text()))
           assert all((root/name).is_file() for name in required)
@@ -287,9 +287,9 @@ jobs:
       - name: Upload all assets to a draft first
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.1.5
+          tag_name: v2.1.6
           target_commitish: ${{ github.sha }}
-          name: SNI Tunnel V2 2.1.5
+          name: SNI Tunnel V2 2.1.6
           body_path: release/RELEASE_NOTES.md
           draft: true
           prerelease: false

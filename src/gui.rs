@@ -193,6 +193,7 @@ pub fn run(cfg: Arc<Mutex<AppConfig>>, logger: Logger) -> Result<i32> {
     }
 
     let latency_task = spawn_latency_reader(&ui, cfg.clone(), state.clone(), rt.clone());
+    let app_usage_task = spawn_app_usage_reader(&ui, cfg.clone(), state.clone(), &rt);
 
     // ---- event pump: engine status/stats + log lines + tray ----
     let ui_weak = ui.as_weak();
@@ -450,9 +451,106 @@ pub fn run(cfg: Arc<Mutex<AppConfig>>, logger: Logger) -> Result<i32> {
     // Graceful shutdown: restores the system proxy and stops the core.
     engine.shutdown_and_wait(Duration::from_secs(15));
     latency_task.abort();
+    app_usage_task.abort();
     tray::shutdown();
     drop(timer);
     Ok(0)
+}
+
+fn spawn_app_usage_reader(
+    ui: &AppWindow,
+    cfg: Arc<Mutex<AppConfig>>,
+    state: Arc<UiState>,
+    runtime: &tokio::runtime::Handle,
+) -> tokio::task::JoinHandle<()> {
+    #[derive(Clone, Copy)]
+    enum Action {
+        Toggle,
+        Reset,
+    }
+    ui.set_app_usage_supported(cfg!(target_os = "linux"));
+    if !cfg!(target_os = "linux") {
+        ui.set_app_usage_status(
+            "Per-app byte accounting is currently available on Linux only.".into(),
+        );
+    }
+    // Bounded commands and one worker: repeated clicks cannot spawn readers.
+    let (tx, mut rx) = tokio::sync::mpsc::channel(8);
+    let toggle = tx.clone();
+    ui.on_toggle_app_usage(move || {
+        let _ = toggle.try_send(Action::Toggle);
+    });
+    ui.on_reset_app_usage(move || {
+        let _ = tx.try_send(Action::Reset);
+    });
+    let weak = ui.as_weak();
+    runtime.spawn(async move {
+        let mut monitor = crate::app_usage::Monitor::default();
+        let mut running = false;
+        let mut rows: Vec<crate::app_usage::AppUsage> = Vec::new();
+        let mut last = std::time::Instant::now();
+        let mut interval = tokio::time::interval(Duration::from_secs(1));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            let status;
+            tokio::select! {
+                action = rx.recv() => {
+                    let Some(action) = action else { break; };
+                    match action {
+                        Action::Toggle => {
+                            running = !running;
+                            monitor.rebaseline();
+                            for row in &mut rows { row.upload_rate = 0; row.download_rate = 0; row.connections = 0; }
+                        }
+                        Action::Reset => { monitor.reset(); rows.clear(); }
+                    }
+                    last = std::time::Instant::now();
+                    status = if running { "Monitoring visible apps. Sorted by total usage." } else { "Paused. Totals retained; traffic during the pause is excluded." }.to_string();
+                }
+                _ = interval.tick(), if running => {
+                    let now = std::time::Instant::now();
+                    let ports = {
+                        let config = cfg.lock().unwrap();
+                        let active = state.active();
+                        let endpoint = config.servers.iter().find(|server| server.id == active)
+                            .or_else(|| config.selected_server_profile())
+                            .map(|server| resolve_endpoint(server, config.selected_sni()));
+                        let mut ports = [config.settings.http_port, config.settings.socks_port];
+                        if let Some(endpoint) = endpoint {
+                            if endpoint.http_port != 0 { ports[0] = endpoint.http_port; }
+                            if endpoint.socks_port != 0 { ports[1] = endpoint.socks_port; }
+                        }
+                        ports
+                    };
+                    match monitor.sample(ports, now.duration_since(last)).await {
+                        Ok(sample) => { rows = sample; status = "Monitoring visible apps. Sorted by total usage.".to_string(); }
+                        Err(error) => {
+                            running = false;
+                            monitor.rebaseline();
+                            for row in &mut rows { row.upload_rate = 0; row.download_rate = 0; row.connections = 0; }
+                            status = error;
+                        }
+                    }
+                    last = now;
+                }
+            }
+            let total = rows.iter().fold(0u64, |total, row| total.saturating_add(row.upload).saturating_add(row.download));
+            let model: Vec<AppUsageRow> = rows.iter().map(|row| AppUsageRow {
+                name: row.name.clone().into(),
+                upload: util::format_bytes(row.upload).into(),
+                download: util::format_bytes(row.download).into(),
+                upload_rate: util::format_rate(row.upload_rate).into(),
+                download_rate: util::format_rate(row.download_rate).into(),
+                connections: row.connections.to_string().into(),
+            }).collect();
+            if weak.upgrade_in_event_loop(move |ui| {
+                ui.set_app_usage_running(running);
+                ui.set_app_usage_status(status.into());
+                ui.set_app_usage_total(util::format_bytes(total).into());
+                ui.set_app_usage(ModelRc::new(VecModel::from(model)));
+            }).is_err() { break; }
+        }
+    })
 }
 
 fn latency_target(

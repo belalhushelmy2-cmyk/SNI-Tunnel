@@ -1,3 +1,23 @@
+# Linux desktop 2.1.6 app usage — 2026-10-28
+
+- All 134 Rust library tests passed, including new baseline/delta accounting,
+  pause/resume/reset, duplicate socket protection and socket parser coverage.
+- A real loopback TCP transfer was resolved to the test application's executable
+  by PID. Its 32 KiB upload and 16 KiB download were counted exactly once, with
+  the server/relay side excluded.
+- Native Slint software-renderer interaction checks passed at 100% and 150%
+  scaling: seven first-click sidebar entries, existing pages/actions and scrolling
+  at 800×600. The new App usage list was checked at 1366×768 and 800×600 with
+  long labels, fixed numeric columns, scrolling, Pause and Reset controls.
+- The headless build check passed. Networking/core/configuration code is unchanged.
+- The optimized Linux build passed the packaged local HTTP proxy/Xray round trip
+  using an isolated temporary store and a local fixture. Installation retains the
+  previous package as a rollback and leaves the running desktop process untouched.
+- This is opt-in, session-only, unprivileged Linux device TCP sampling through ss,
+  not exhaustive per-app VPN accounting. Direct traffic is included; UDP/QUIC,
+  inaccessible processes and connections entirely between samples are omitted.
+  Windows/macOS/FreeBSD and Android/TV byte attribution is not implemented.
+
 # FreeBSD native proxy preview — 2026-10-27
 
 - FreeBSD 14.3 amd64 VM: native optimized Rust GUI build and 129 library tests

@@ -4,6 +4,7 @@
 //! The crate is split into a library (this file) and a thin binary
 //! (`src/main.rs`) so that the behaviour can be tested with integration tests.
 
+pub mod app_usage;
 pub mod clipboard;
 pub mod compat;
 pub mod console;

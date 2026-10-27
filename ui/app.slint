@@ -32,6 +32,14 @@ export struct LogRow {
 }
 
 export struct TrafficPoint { up: float, down: float }
+export struct AppUsageRow {
+    name: string,
+    upload: string,
+    download: string,
+    upload-rate: string,
+    download-rate: string,
+    connections: string,
+}
 
 import { Theme, Preferences, Surface, ActionButton as Button, RailItem, MetricCard, StatusChip, HealthTile, Sparkline, PlotSegment, SearchField } from "design.slint";
 import "../assets/fonts/Inter.ttf";
@@ -49,6 +57,13 @@ export component AppWindow inherits Window {
     icon: @image-url("../assets/icon-256.png");
 
     in-out property <int> tab: 0;
+    in property <bool> app-usage-supported: false;
+    in property <bool> app-usage-running: false;
+    in property <[AppUsageRow]> app-usage: [];
+    in property <string> app-usage-status: "Start monitoring to see which apps use your connection.";
+    in property <string> app-usage-total: "0 B";
+    callback toggle-app-usage();
+    callback reset-app-usage();
     in property <string> app-version: "Development";
     in property <string> selected-server-name: "No active server";
     in property <string> selected-server-detail: "Choose a server from your list";
@@ -229,6 +244,7 @@ export component AppWindow inherits Window {
                 RailItem { label: "Servers"; icon: @image-url("../assets/v2/servers.svg"); selected: root.tab == 1; clicked => { root.tab = 1; } }
                 RailItem { label: "SNI Profiles"; icon: @image-url("../assets/v2/sni.svg"); selected: root.tab == 2; clicked => { root.tab = 2; } }
                 RailItem { label: "Activity"; icon: @image-url("../assets/v2/activity.svg"); selected: root.tab == 3; clicked => { root.tab = 3; } }
+                RailItem { label: "App usage"; icon: @image-url("../assets/v2/servers.svg"); selected: root.tab == 6; clicked => { root.tab = 6; } }
                 RailItem { label: "Settings"; icon: @image-url("../assets/v2/settings.svg"); selected: root.tab == 4; clicked => { root.tab = 4; } }
                 RailItem { label: "Diagnostics"; icon: @image-url("../assets/v2/diagnostics.svg"); selected: root.tab == 5; clicked => { root.tab = 5; } }
                 Rectangle { vertical-stretch: 1; }
@@ -246,8 +262,8 @@ export component AppWindow inherits Window {
             padding: root.dense ? 18px : 24px; spacing: 14px;
             HorizontalLayout { spacing: 10px; height: 48px; vertical-stretch: 0;
                 VerticalLayout { spacing: 5px; horizontal-stretch: 1; min-width: 0px; preferred-width: 0px;
-                    Text { text: root.tab == 0 ? "Connection overview" : root.tab == 1 ? "Your servers" : root.tab == 2 ? "SNI profiles" : root.tab == 3 ? "Connection activity" : root.tab == 4 ? "Preferences" : "Diagnostics"; color: Theme.text; font-size: 22px; font-weight: 600; }
-                    Text { text: root.tab == 0 ? "Your connection. Your configuration." : root.tab == 1 ? "Manage and select your server profiles" : root.tab == 2 ? "Independent TLS SNI and WebSocket settings" : root.tab == 3 ? "Connection events and notifications" : root.tab == 4 ? "Connection and application preferences" : "Inspect and verify your connection"; color: Theme.muted; font-size: 12px; }
+                    Text { text: root.tab == 0 ? "Connection overview" : root.tab == 1 ? "Your servers" : root.tab == 2 ? "SNI profiles" : root.tab == 3 ? "Connection activity" : root.tab == 4 ? "Preferences" : root.tab == 6 ? "App usage" : "Diagnostics"; color: Theme.text; font-size: 22px; font-weight: 600; }
+                    Text { text: root.tab == 0 ? "Your connection. Your configuration." : root.tab == 1 ? "Manage and select your server profiles" : root.tab == 2 ? "Independent TLS SNI and WebSocket settings" : root.tab == 3 ? "Connection events and notifications" : root.tab == 4 ? "Connection and application preferences" : root.tab == 6 ? "See which apps use your connection" : "Inspect and verify your connection"; color: Theme.muted; font-size: 12px; }
                 }
                 global-search := SearchField { visible: root.tab == 1; width: root.tab == 1 ? 200px : 0px; height: 34px; text <=> root.server-search;
                     edited => { root.server-search-changed(); }
@@ -521,6 +537,52 @@ export component AppWindow inherits Window {
                         CheckBox { text: "Allow insecure (skip identity verification)"; checked <=> root.sni-allow-insecure; }
                         Rectangle { horizontal-stretch: 1; }
                         Button { text: "Add profile"; clicked => { root.add_sni_clicked(); } }
+                    }
+                }
+            }
+        }
+
+        if root.tab == 6: VerticalLayout {
+            spacing: 12px;
+            Surface { height: 122px; vertical-stretch: 0;
+                VerticalLayout { padding: 16px; spacing: 8px;
+                    HorizontalLayout { spacing: 10px;
+                        Text { text: "DEVICE TCP USAGE"; color: Theme.accent; font-size: 11px; font-weight: 600; vertical-alignment: center; horizontal-stretch: 1; min-width: 0px; }
+                        Text { text: root.app-usage-total + " observed"; color: Theme.text; font-size: 12px; width: 150px; overflow: elide; vertical-alignment: center; }
+                        Button { text: root.app-usage-running ? "Pause" : "Start monitoring"; enabled: root.app-usage-supported; clicked => { root.toggle-app-usage(); } }
+                        Button { text: "Reset"; enabled: root.app-usage-supported; clicked => { root.reset-app-usage(); } }
+                    }
+                    Text { text: root.app-usage-status; color: Theme.text; font-size: 12px; wrap: word-wrap; }
+                    Text { text: "Visible apps · TCP only · 1-second samples · totals since Start / Reset"; color: Theme.muted; font-size: 11px; wrap: word-wrap; }
+                }
+            }
+            Text { text: "Includes direct and tunneled TCP; this is not a breakdown of tunnel totals. UDP, hidden processes and connections between samples are not included. Local IPC and tunnel relay processes are excluded."; color: Theme.muted; font-size: 11px; wrap: word-wrap; }
+            Surface { vertical-stretch: 1; min-height: 100px;
+                VerticalLayout { padding: 12px; spacing: 6px;
+                    HorizontalLayout { spacing: 8px; height: 28px;
+                        Text { text: "Application"; color: Theme.muted; horizontal-stretch: 1; min-width: 0px; }
+                        Text { text: "Download"; color: Theme.muted; width: 110px; }
+                        Text { text: "Upload"; color: Theme.muted; width: 110px; }
+                        Text { text: "TCP"; color: Theme.muted; width: 40px; }
+                    }
+                    Rectangle { height: 1px; background: Theme.border; }
+                    if root.app-usage.length == 0: Text { text: root.app-usage-running ? "Waiting for visible TCP connections…" : "No usage measured. Start monitoring, then use your apps."; color: Theme.muted; wrap: word-wrap; vertical-alignment: center; horizontal-alignment: center; }
+                    ListView { vertical-stretch: 1;
+                        for row in root.app-usage: Rectangle {
+                            height: 64px; background: Theme.panel;
+                            HorizontalLayout { padding: 8px; spacing: 8px;
+                                Text { text: row.name; color: Theme.text; horizontal-stretch: 1; min-width: 0px; preferred-width: 0px; overflow: elide; vertical-alignment: center; }
+                                VerticalLayout { width: 110px; spacing: 5px; alignment: center;
+                                    Text { text: row.download; color: Theme.text; overflow: elide; }
+                                    Text { text: row.download-rate; color: Theme.accent; font-size: 11px; overflow: elide; }
+                                }
+                                VerticalLayout { width: 110px; spacing: 5px; alignment: center;
+                                    Text { text: row.upload; color: Theme.text; overflow: elide; }
+                                    Text { text: row.upload-rate; color: Theme.muted; font-size: 11px; overflow: elide; }
+                                }
+                                Text { text: row.connections; color: Theme.muted; width: 40px; overflow: elide; vertical-alignment: center; }
+                            }
+                        }
                     }
                 }
             }

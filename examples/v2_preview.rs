@@ -78,7 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             (800., 600.),
         ] {
             main.set_size(LogicalSize::new(width, height));
-            for tab in 0..6 {
+            for tab in 0..7 {
                 ui.set_tab(tab);
                 save(
                     &main,
@@ -87,7 +87,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 );
             }
         }
-        println!("Rendered six native pages at five window sizes, scale {scale}");
+        println!("Rendered seven native pages at five window sizes, scale {scale}");
         return Ok(());
     }
     let click = |x, y| {
@@ -246,8 +246,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ui.set_tab(0);
     main.set_size(LogicalSize::new(980., 900.));
     // A complete first click must activate each item, including icon/padding hits.
-    for (index, x) in [(1, 25.), (2, 80.), (3, 151.), (4, 25.), (5, 80.), (0, 151.)] {
-        let position = LogicalPosition::new(x, 104. + index as f32 * 48.);
+    for (index, slot, x) in [
+        (1, 1, 25.),
+        (2, 2, 80.),
+        (3, 3, 151.),
+        (6, 4, 25.),
+        (4, 5, 80.),
+        (5, 6, 151.),
+        (0, 0, 151.),
+    ] {
+        let position = LogicalPosition::new(x, 104. + slot as f32 * 48.);
         main.dispatch_event(WindowEvent::PointerMoved { position });
         main.dispatch_event(WindowEvent::PointerPressed {
             position,
@@ -285,10 +293,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ui.get_search_focused(),
         "Ctrl+K focuses native server search"
     );
-    for index in 0..6 {
+    for index in 0..7 {
         ui.set_tab(index);
         save(&main, &directory, &format!("page-{index}"));
     }
+    ui.set_tab(6);
+    ui.set_app_usage_supported(true);
+    ui.set_app_usage_running(true);
+    let usage_toggles = Rc::new(std::cell::Cell::new(0));
+    let usage_resets = Rc::new(std::cell::Cell::new(0));
+    let toggles = usage_toggles.clone();
+    ui.on_toggle_app_usage(move || toggles.set(toggles.get() + 1));
+    let resets = usage_resets.clone();
+    ui.on_reset_app_usage(move || resets.set(resets.get() + 1));
+    ui.set_app_usage_status("Offline test fixture — not live traffic".into());
+    ui.set_app_usage(slint::ModelRc::new(slint::VecModel::from(
+        (0..30)
+            .map(|i| sni_tunnel::gui::AppUsageRow {
+                name: format!("Layout test application {i} with a long name").into(),
+                upload: "123.45 GB".into(),
+                download: "987.65 GB".into(),
+                upload_rate: "999.99 MB/s".into(),
+                download_rate: "999.99 MB/s".into(),
+                connections: "1000".into(),
+            })
+            .collect::<Vec<_>>(),
+    )));
+    for (width, height) in [(1366., 768.), (800., 600.)] {
+        main.set_size(LogicalSize::new(width, height));
+        let before = save(&main, &directory, &format!("app-usage-{width}"));
+        scroll(&main, width - 100., height - 180.);
+        let after = save(&main, &directory, &format!("app-usage-scrolled-{width}"));
+        assert_ne!(before, after, "App usage list scrolls at {width}");
+    }
+    click(660., 114.);
+    click(735., 114.);
+    assert_eq!(usage_toggles.get(), 1, "App usage Pause is wired");
+    assert_eq!(usage_resets.get(), 1, "App usage Reset is wired");
+    main.set_size(LogicalSize::new(980., 900.));
     ui.set_tab(1);
     save(&main, &directory, "five-servers");
     let used = Rc::new(std::cell::Cell::new(-1));
@@ -373,6 +415,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &after[after.len() - footer..],
         "editor footer must remain fixed while scrolling"
     );
-    println!("PASS: five separate server rows in normal and compact views; six first-click menu actions; Space/Enter; six pages; 800x600 dashboard scroll; 660x420 editor scroll and fixed footer; scale {scale}");
+    println!("PASS: five separate server rows in normal and compact views; seven first-click menu actions; Space/Enter; seven pages; 800x600 dashboard scroll; 660x420 editor scroll and fixed footer; scale {scale}");
     Ok(())
 }

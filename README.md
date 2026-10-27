@@ -1,3 +1,9 @@
+## 2.1.6 — per-app traffic usage
+
+Linux desktop: open **App usage → Start monitoring** for measured per-app TCP
+download/upload totals and live speeds. Includes direct and tunneled TCP; UDP/QUIC
+and connections between samples are omitted. See [release notes](RELEASE_NOTES.md).
+
 ## Android phone and Android TV
 
 Native Android 1.0.6 phone/TV apps are available in the [Android project](android/README.md).
@@ -73,6 +79,28 @@ Other desktops can use the local HTTP/SOCKS listeners manually or use TUN. Windo
 tray integration and nftables-based protection.
 The preserved Linux Xray 1.6.1/BadVPN path supports VMess WebSocket + TLS and rejects
 unsupported XUDP/certificate-pin combinations rather than discarding settings.
+
+## Per-app traffic usage (Linux desktop)
+
+Open **App usage → Start monitoring** to see visible applications ranked by
+observed TCP usage, with download/upload totals, live rates and open connection
+counts. Pause retains totals and excludes traffic during the pause; Reset clears
+the in-memory history. Nothing is saved or sent anywhere.
+
+These are **device TCP measurements**, including direct connections and connections
+through TUN or the local proxy. They are separate from the Overview's tunnel
+totals. UDP/QUIC, processes hidden by operating-system permissions, and connections
+that open and close between one-second samples are not included. Local IPC and
+the tunnel's relay processes are excluded to avoid counting those copies again.
+No administrator access is requested. Linux needs `ss` from iproute2 (Fedora:
+iproute), already included in the Linux package dependencies. Other desktop
+platforms show an explicit unavailable state rather than estimated usage.
+
+The collector reads the kernel's TCP counters and socket ownership through
+[`ss`](https://man7.org/linux/man-pages/man8/ss.8.html), using socket cookies to
+track connections and grouping processes by executable name. At most 512 app
+groups and 20,000 simultaneous sockets are tracked; restarting the app clears the
+session. It cannot prove which individual connections traversed the VPN.
 
 ## Saved profiles
 
