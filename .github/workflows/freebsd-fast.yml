@@ -38,7 +38,9 @@ jobs:
             pkg check -s sni-tunnel-v2
             pkg check -d sni-tunnel-v2
             ldd /usr/local/lib/sni-tunnel-v2/sni-tunnel
-            Xvfb :98 -screen 0 1366x768x24 &
+            Xvfb :98 -screen 0 1366x768x24 > /tmp/sni-xvfb.log 2>&1 < /dev/null &
+            xvfb_pid=$!
+            trap 'kill "$xvfb_pid" 2>/dev/null || true' EXIT
             export DISPLAY=:98 SLINT_BACKEND=winit-software
             python3 packaging/native/smoke.py --binary /usr/local/lib/sni-tunnel-v2/sni-tunnel --tls-fixture --output releases/v2/freebsd/validation-freebsd.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
