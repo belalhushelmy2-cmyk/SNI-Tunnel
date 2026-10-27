@@ -1,4 +1,4 @@
-name: Verify final native desktop packages
+name: Verify final native desktop packages and TLS pins
 on:
   push:
     branches: [main]

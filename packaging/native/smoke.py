@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Real native proxy round trip and GUI startup using disposable local fixtures."""
 import argparse
+import hashlib
 import uuid
 from contextlib import ExitStack
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -38,6 +39,7 @@ def tls_fixture(binary, temporary, env, fixture_port):
                     '-keyout', str(key), '-out', str(cert), '-days', '1', '-config', str(cert_config)],
                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     key.chmod(0o600)
+    cert_pin = hashlib.sha256(subprocess.check_output(['openssl', 'x509', '-in', str(cert), '-outform', 'DER'])).hexdigest()
     identity, remote_port = str(uuid.uuid4()), port()
     config = dict(log=dict(loglevel='error'), inbounds=[dict(listen='127.0.0.1', port=remote_port,
         protocol='vmess', settings=dict(clients=[dict(id=identity, alterId=0)]),
@@ -64,7 +66,11 @@ def tls_fixture(binary, temporary, env, fixture_port):
                     time.sleep(.1)
             else:
                 raise RuntimeError('TLS fixture did not listen')
-            for insecure in [True, False]:
+            original_profile = json.loads(profile.read_text())
+            cases = [('pinned', True, cert_pin, True), ('wrong-pin', True, '00' * 32, False), ('strict', False, '', False), ('untrusted-without-pin', True, '', False)]
+            for label, insecure, pin, expected in cases:
+                current_profile = dict(original_profile, pinned_cert_sha256=pin)
+                profile.write_text(json.dumps(current_profile))
                 command = [str(binary), 'check', '--vmess', str(profile), '--sni', 'fixture.invalid',
                            '--mode', 'manual', '--http-port', str(port()), '--socks-port', str(port()),
                            '--test-url', f'http://127.0.0.1:{fixture_port}/']
@@ -72,14 +78,14 @@ def tls_fixture(binary, temporary, env, fixture_port):
                     command.append('--allow-insecure')
                 result = subprocess.run(command, env=env, text=True, capture_output=True, timeout=65)
                 forwarded = '[ok]   FORWARD' in result.stdout
-                if insecure and (result.returncode or not forwarded):
+                if expected and (result.returncode or not forwarded):
                     raise RuntimeError('Pinned VMess/WS/TLS fixture failed:\n' + result.stdout + result.stderr)
-                if not insecure and (result.returncode == 0 or forwarded):
-                    raise RuntimeError('Strict TLS accepted the untrusted fixture certificate')
+                if not expected and (result.returncode == 0 or forwarded):
+                    raise RuntimeError('TLS accepted the negative fixture: ' + label)
         finally:
             server.terminate()
             server.wait(timeout=15)
-    return 'passed: custom SNI and Allow insecure forward; strict TLS rejects untrusted certificate'
+    return 'passed: explicit certificate pin forwards with custom SNI; wrong pin, strict untrusted certificate and untrusted discovery are rejected'
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)

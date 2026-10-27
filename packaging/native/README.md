@@ -10,6 +10,13 @@ shown in Settings (defaults 2080 and 1080 on 127.0.0.1). Other applications keep
 using their existing network connection. Do not interpret the proxy health check
 as whole-device protection. Local proxy mode carries TCP, not arbitrary UDP.
 
+For a certificate that is untrusted or does not match your custom SNI, obtain
+its verified SHA-256 fingerprint from the server administrator and enter it in
+the server editor's certificate-pin field. These platforms keep the existing
+strict certificate-discovery behavior: enabling Allow insecure alone does not
+silently trust an unverified certificate. Explicit pins are supported and wrong
+pins are rejected.
+
 ## macOS 12 or later
 
 Choose the arm64 disk image for Apple Silicon, x86_64 for Intel. Mount the DMG,
