@@ -29,7 +29,7 @@ def core(dest):
     machine = platform.machine().lower()
     lock = json.loads((Path(__file__).with_name('core-lock.json')).read_text())
     name, digest = lock['artifacts'][f'{system}-{machine}']
-    cache = ROOT / 'target/native-core' / name
+    cache = ROOT / 'target/native-core' / lock['version'] / name
     cache.parent.mkdir(parents=True, exist_ok=True)
     if not cache.exists():
         with urllib.request.urlopen(f'https://github.com/XTLS/Xray-core/releases/download/v{lock["version"]}/{name}', timeout=180) as response:
