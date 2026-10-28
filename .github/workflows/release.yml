@@ -10,6 +10,10 @@ on:
         description: Publish v2.1.6 after successful builds
         type: boolean
         default: false
+      windows_only:
+        description: Rebuild only Windows packages after a Windows-specific fix
+        type: boolean
+        default: false
 permissions:
   contents: read
 env:
@@ -41,6 +45,7 @@ jobs:
             fi
           done
   linux:
+    if: ${{ !inputs.windows_only }}
     needs: prepare
     name: Linux tests, DEB and AppImage
     runs-on: ubuntu-24.04
@@ -228,6 +233,7 @@ jobs:
           rpm -V sni-tunnel-v2
 
   android:
+    if: ${{ !inputs.windows_only }}
     name: Android phone and TV gates
     uses: ./.github/workflows/android.yml
 
