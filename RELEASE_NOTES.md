@@ -22,7 +22,7 @@ platforms. macOS and FreeBSD previews remain available in the
 [previous release](https://github.com/belalhushelmy2-cmyk/SNI-Tunnel/releases/tag/v2.1.5).
 
 Linux downloads include the portable archive, AppImage, Debian package, Fedora
-RPM, Arch package and offline installers. The portable archive is used by the
+RPM, Arch package, Solus eopkg, AerynOS stone/index and offline installers. The portable archive is used by the
 existing terminal installer/updater. User configuration is preserved.
 
 See TEST_RESULTS.md for validation and SHA256SUMS for download integrity.

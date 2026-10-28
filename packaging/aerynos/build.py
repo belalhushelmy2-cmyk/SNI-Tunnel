@@ -12,8 +12,8 @@ import urllib.request
 ROOT = Path(__file__).resolve().parents[2]
 TOOLS_URL = 'https://codeload.github.com/AerynOS/os-tools/tar.gz/refs/tags/v0.26.1'
 TOOLS_SHA = '23ccca7bac8e8196b11ebb59bd0e255f067a97be72ec7dacc5a758753fceaa91'
-DESKTOP_URL = 'https://github.com/belalhushelmy2-cmyk/SNI-Tunnel/releases/download/v2.1.5/sni-tunnel-v2_2.1.5_amd64.tar.gz'
-DESKTOP_SHA = '8ac14af8127139578ca6e9197edcba6a1db158bf31b6ebfcdd3ff25594661a3f'
+DESKTOP_URL = 'https://github.com/belalhushelmy2-cmyk/SNI-Tunnel/releases/download/v2.1.6/sni-tunnel-v2_2.1.6_amd64.tar.gz'
+DESKTOP_SHA = '7a3fe4bcd6c72ec77930bec5e6121b65a2c4fda0380e24e5eeaf394b6ec0f567'
 
 def verified(path, url, digest):
     if not path.exists():
@@ -64,7 +64,7 @@ def main():
         shutil.copyfile(app / 'icon.png', icon)
         subprocess.run(['cargo', 'build', '--release', '--locked', '--manifest-path', str(ROOT / 'packaging/aerynos/stone-pack/Cargo.toml')], check=True)
         a.output.mkdir(parents=True, exist_ok=True)
-        package = a.output / 'sni-tunnel-v2-2.1.5-1-1-x86_64.stone'
+        package = a.output / 'sni-tunnel-v2-2.1.6-2-1-x86_64.stone'
         subprocess.run([str(ROOT / 'packaging/aerynos/stone-pack/target/release/sni-stone-pack'), str(payload), str(package), str(Path(__file__).with_name('dependencies.txt'))], check=True)
         subprocess.run([a.moss, 'inspect', str(package)], check=True)
         subprocess.run([a.moss, 'index', str(a.output)], check=True)

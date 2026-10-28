@@ -1,8 +1,8 @@
 name       : sni-tunnel-v2
-version    : '2.1.5'
-release    : 1
+version    : '2.1.6'
+release    : 2
 source     :
-    - https://github.com/belalhushelmy2-cmyk/SNI-Tunnel/releases/download/v2.1.5/sni-tunnel-v2_2.1.5_amd64.tar.gz : 8ac14af8127139578ca6e9197edcba6a1db158bf31b6ebfcdd3ff25594661a3f
+    - https://github.com/belalhushelmy2-cmyk/SNI-Tunnel/releases/download/v2.1.6/sni-tunnel-v2_2.1.6_amd64.tar.gz : 7a3fe4bcd6c72ec77930bec5e6121b65a2c4fda0380e24e5eeaf394b6ec0f567
 homepage   : https://github.com/belalhushelmy2-cmyk/SNI-Tunnel
 license    : LicenseRef-SNI-Tunnel
 component  : network.clients

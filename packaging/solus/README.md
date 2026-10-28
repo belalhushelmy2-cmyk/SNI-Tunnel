@@ -8,7 +8,7 @@ libc, display server or desktop services with bundled copies.
 Download the package from the GitHub release, verify its SHA256SUMS entry, then:
 
 ```sh
-sudo eopkg install ./sni-tunnel-v2-2.1.5-1-1-x86_64.eopkg
+sudo eopkg install ./sni-tunnel-v2-2.1.6-2-1-x86_64.eopkg
 ```
 
 The same command updates an existing package. The desktop menu entry is

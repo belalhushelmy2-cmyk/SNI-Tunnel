@@ -23,7 +23,7 @@ env:
   RELEASE_TAG: v2.1.6
 
 concurrency:
-  group: sni-release-${{ github.ref }}
+  group: sni-release-${{ github.ref }}-${{ inputs.windows_only && 'windows' || 'all' }}
   cancel-in-progress: true
 
 jobs:

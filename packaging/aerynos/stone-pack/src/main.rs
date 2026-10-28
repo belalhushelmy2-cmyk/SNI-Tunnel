@@ -67,7 +67,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut metadata = vec![];
     for (tag, value) in [
         (Tag::Name, "sni-tunnel-v2"),
-        (Tag::Version, "2.1.5"),
+        (Tag::Version, "2.1.6"),
         (Tag::Architecture, "x86_64"),
         (Tag::Summary, "Native VMess desktop with custom TLS SNI"),
         (
@@ -86,10 +86,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             primitive: Value::String(value.into()),
         });
     }
-    for tag in [Tag::Release, Tag::BuildRelease] {
+    for (tag, release) in [(Tag::Release, 2), (Tag::BuildRelease, 1)] {
         metadata.push(Meta {
             tag,
-            primitive: Value::Uint64(1),
+            primitive: Value::Uint64(release),
         });
     }
     for line in std::fs::read_to_string(&args[3])?

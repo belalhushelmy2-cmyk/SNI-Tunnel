@@ -1,0 +1,121 @@
+name: Publish verified desktop artifacts
+on:
+  workflow_dispatch:
+    inputs:
+      linux_run:
+        description: Completed run with successful Linux, Arch, Fedora and Android jobs
+        required: true
+      windows_run:
+        description: Completed run with successful Windows job
+        required: true
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: sni-publish-verified
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      LINUX_RUN: ${{ inputs.linux_run }}
+      WINDOWS_RUN: ${{ inputs.windows_run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require successful platform checks and matching application sources
+        shell: python
+        run: |
+          import json, os, subprocess
+          def api(path):
+              return json.loads(subprocess.check_output(['gh','api','repos/'+os.environ['GITHUB_REPOSITORY']+'/'+path], text=True))
+          for key, required in [
+              ('LINUX_RUN', ['Linux tests, DEB and AppImage', 'Arch binary and offline dependencies', 'Fedora RPM install and reinstall', 'Android phone and TV gates / apk']),
+              ('WINDOWS_RUN', ['Windows tests and x64 installer']),
+          ]:
+              run_id=os.environ[key]
+              assert run_id.isdigit()
+              run=api('actions/runs/'+run_id)
+              assert run['status']=='completed' and run['head_repository']['full_name']==os.environ['GITHUB_REPOSITORY']
+              assert run['path']=='.github/workflows/release.yml'
+              jobs=api('actions/runs/'+run_id+'/jobs?per_page=100')['jobs']
+              for name in required:
+                  matches=[job for job in jobs if job['name']==name]
+                  assert len(matches)==1 and matches[0]['conclusion']=='success', name
+              # Packaging/docs may advance after the binaries were built. Application
+              # sources, UI, locked dependencies and build settings must be identical.
+              paths=['src','ui','Cargo.toml','Cargo.lock','build.rs','.cargo']
+              if key=='WINDOWS_RUN': paths+=['assets/app.rc','packaging/windows']
+              else: paths+=['packaging/linux','packaging/offline']
+              subprocess.run(['git','diff','--exit-code',run['head_sha'],'HEAD','--',*paths],check=True)
+          import tomllib
+          version=tomllib.loads(open('Cargo.toml').read())['package']['version']
+          with open(os.environ['GITHUB_ENV'],'a') as output: output.write('RELEASE_TAG=v'+version+'\n')
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.linux_run }}
+          pattern: v2-*
+          merge-multiple: true
+          path: release
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.windows_run }}
+          name: v2-windows
+          path: release
+      - name: Retrieve native Linux packages and unchanged signed APKs
+        run: |
+          test "$(gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft')" = true
+          gh release download "$RELEASE_TAG" --pattern '*.eopkg' --pattern '*.stone' --pattern 'stone.index' --dir release
+          gh release download v2.1.5 --pattern 'SNI-Tunnel-Android*-1.0.6.apk' --dir release
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          expected=json.loads(Path('android/release-assets.json').read_text())
+          expected.update(json.loads(Path('packaging/linux/release-assets.json').read_text()))
+          for name,digest in expected.items():
+              assert hashlib.sha256((Path('release')/name).read_bytes()).hexdigest()==digest, name
+          PY
+      - name: Package current source and release documentation
+        run: |
+          python3 packaging/release-source.py "release/SNI-Tunnel-V2-${RELEASE_TAG#v}-source.zip"
+          cp RELEASE_NOTES.md TEST_RESULTS.md MIGRATION.md release/
+      - name: Verify required downloads and generate checksums
+        shell: python
+        run: |
+          from pathlib import Path
+          import hashlib,json,os
+          root=Path('release'); version=os.environ['RELEASE_TAG'][1:]
+          required=[f'sni-tunnel-v2_{version}_amd64.tar.gz',f'sni-tunnel-v2_{version}_amd64.deb',f'sni-tunnel-v2-{version}-1.x86_64.rpm',f'SNI-Tunnel-V2-{version}-x86_64.AppImage',f'SNI-Tunnel-V2-{version}-source.zip',f'SNI-Tunnel-V2-{version}-windows-x64-portable.zip','SNI-Tunnel-V2-Setup-x64.exe',f'sni-tunnel-v2-bin-{version}-1-x86_64.pkg.tar.zst','RELEASE_NOTES.md','TEST_RESULTS.md','MIGRATION.md','stone.index']
+          required += [f'SNI-Tunnel-V2-{version}-{platform}-x86_64-offline.{ext}' for platform in ['arch','ubuntu-24.04'] for ext in ['bin','tar.gz']]
+          required += list(json.loads(Path('android/release-assets.json').read_text()))
+          for name in required: assert (root/name).is_file() and (root/name).stat().st_size>0, name
+          for suffix in ['eopkg','stone']:
+              matches=list(root.glob(f'sni-tunnel-v2-{version}-*.{suffix}'))
+              assert len(matches)==1, suffix
+          files=sorted(p for p in root.iterdir() if p.is_file() and p.name!='SHA256SUMS')
+          (root/'SHA256SUMS').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in files))
+      - name: Upload and verify draft assets before publishing latest
+        run: |
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')" = "$GITHUB_SHA"
+          test "$(gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft')" = true
+          gh release edit "$RELEASE_TAG" --target "$GITHUB_SHA" --title "SNI Tunnel ${RELEASE_TAG#v} — per-app traffic usage" --notes-file release/RELEASE_NOTES.md
+          gh release upload "$RELEASE_TAG" release/* --clobber
+          python3 - <<'PY'
+          import json,os,subprocess,hashlib
+          from pathlib import Path
+          repo=os.environ['GITHUB_REPOSITORY'];tag=os.environ['RELEASE_TAG']
+          release=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases/tags/{tag}'],text=True))
+          assert release['draft']
+          assets={a['name']:a for a in release['assets']}
+          expected={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in Path('release').iterdir() if p.is_file()}
+          assert set(assets)==set(expected)
+          for name,digest in expected.items(): assert assets[name]['digest']=='sha256:'+digest, name
+          PY
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')" = "$GITHUB_SHA"
+          gh release edit "$RELEASE_TAG" --draft=false --latest

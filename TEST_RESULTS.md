@@ -18,6 +18,15 @@
   inaccessible processes and connections entirely between samples are omitted.
   Windows/macOS/FreeBSD and Android/TV byte attribution is not implemented.
 
+## 2.1.6 release package gates
+
+- [Linux, Android/TV, Arch and Fedora gates](https://github.com/belalhushelmy2-cmyk/SNI-Tunnel/actions/runs/40605771964): all four platform jobs passed. Linux includes Rust regressions, native Slint interaction/scaling checks, Python/editor/network/firewall tests, a glibc 2.30 portable build, AppImage startup and Debian payload verification. Fedora installation/reinstallation and Arch/offline integrity checks passed.
+- [Windows rebuild](https://github.com/belalhushelmy2-cmyk/SNI-Tunnel/actions/runs/40606598714): Windows regressions, live WFP check, native installer build, executable 2.1.6 resource and extracted installer payload verification passed. The first run caught the stale Windows resource and was superseded by this corrected build.
+- All 19 Linux installer regression tests passed locally.
+- Solus ypkg built release 2.1.6-2-1; a native eopkg upgrade and package-integrity check passed. AerynOS's official stone writer/index tools built release 2.1.6-2-1; native moss 0.26.6 upgraded an existing stateful test installation and preserved its profile marker. All 15 installed payload files on both distributions match the canonical portable archive byte-for-byte.
+- Solus and AerynOS package revisions were raised for native update ordering. Their recipe SHA-256 pins match the verified CI portable archive. The release publisher checks application-source equivalence against the tested builds and verifies every uploaded asset digest before marking the release latest.
+- Android/TV release APKs are unchanged 1.0.6 signed originals, verified against android/release-assets.json. Debug build artifacts are not distributed. macOS/FreeBSD previews remain in v2.1.5; this release does not add per-app accounting on those platforms.
+
 # FreeBSD native proxy preview — 2026-10-27
 
 - FreeBSD 14.3 amd64 VM: native optimized Rust GUI build and 129 library tests
