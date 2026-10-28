@@ -110,7 +110,8 @@ jobs:
           import json,os,subprocess,hashlib
           from pathlib import Path
           repo=os.environ['GITHUB_REPOSITORY'];tag=os.environ['RELEASE_TAG']
-          release=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases/tags/{tag}'],text=True))
+          release_id=json.loads(subprocess.check_output(['gh','release','view',tag,'--json','databaseId'],text=True))['databaseId']
+          release=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases/{release_id}'],text=True))
           assert release['draft']
           assets={a['name']:a for a in release['assets']}
           expected={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in Path('release').iterdir() if p.is_file()}
