@@ -50,7 +50,7 @@ jobs:
               # sources, UI, locked dependencies and build settings must be identical.
               paths=['src','ui','Cargo.toml','Cargo.lock','build.rs','.cargo']
               if key=='WINDOWS_RUN': paths+=['assets/app.rc','packaging/windows']
-              else: paths+=['packaging/linux','packaging/offline']
+              else: paths+=['packaging/linux','packaging/offline',':(exclude)packaging/linux/release-assets.json']
               subprocess.run(['git','diff','--exit-code',run['head_sha'],'HEAD','--',*paths],check=True)
           import tomllib
           version=tomllib.loads(open('Cargo.toml').read())['package']['version']
